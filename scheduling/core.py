@@ -5,6 +5,7 @@ from plugin.mixins import SettingsMixin, UrlsMixin, UserInterfaceMixin
 
 from .version import PLUGIN_VERSION
 
+
 class StockSchedulingPlugin(SettingsMixin, UrlsMixin, UserInterfaceMixin, InvenTreePlugin):
     """Stock scheduling plugin for InvenTree."""
 
