@@ -2,6 +2,7 @@
 
 from plugin import InvenTreePlugin
 
+from django.utils.translation import gettext_lazy as _
 from plugin.mixins import SettingsMixin, UserInterfaceMixin
 
 from . import PLUGIN_VERSION
@@ -15,7 +16,7 @@ class InvenTreeForecasting(SettingsMixin, UserInterfaceMixin, InvenTreePlugin):
     TITLE = "InvenTree Forecasting"
     NAME = "InvenTreeForecasting"
     SLUG = "inventree-forecasting"
-    DESCRIPTION = "Provide stock forecasting for InvenTree based on scheduled orders"
+    DESCRIPTION = "Provide stock forecasting based on scheduled orders"
     VERSION = PLUGIN_VERSION
 
     # Additional project information
@@ -23,13 +24,8 @@ class InvenTreeForecasting(SettingsMixin, UserInterfaceMixin, InvenTreePlugin):
     WEBSITE = "https://github.com/inventree/inventree-forecasting"
     LICENSE = "MIT"
 
-    # Optionally specify supported InvenTree versions
-    # MIN_VERSION = '0.18.0'
-    # MAX_VERSION = '2.0.0'
+    MIN_VERSION = '0.18.0'  # Minimum InvenTree version required for this plugin
 
-    
-    
-    
     # Plugin settings (from SettingsMixin)
     # Ref: https://docs.inventree.org/en/stable/extend/plugins/settings/
     SETTINGS = {
@@ -42,9 +38,6 @@ class InvenTreeForecasting(SettingsMixin, UserInterfaceMixin, InvenTreePlugin):
         }
     }
     
-    
-    
-
     # User interface elements (from UserInterfaceMixin)
     # Ref: https://docs.inventree.org/en/stable/extend/plugins/ui/
     
@@ -58,9 +51,9 @@ class InvenTreeForecasting(SettingsMixin, UserInterfaceMixin, InvenTreePlugin):
         if context.get('target_model') == 'part':
             panels.append({
                 'key': 'inventree-forecasting-panel',
-                'title': 'InvenTree Forecasting',
-                'description': 'Custom panel description',
-                'icon': 'ti:mood-smile:outline',
+                'title': _('Stock Forecasting'),
+                'description': _('Stock level forecasting'),
+                'icon': 'ti:calendar-bolt:outline',
                 'source': self.plugin_static_file('Panel.js:renderInvenTreeForecastingPanel'),
                 'context': {
                     # Provide additional context data to the panel
