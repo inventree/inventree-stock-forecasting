@@ -1,10 +1,37 @@
-import { Alert, Button, Group, Stack, Text, Title } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
-import { useCallback, useMemo, useState } from 'react';
+import { Accordion, Alert, Stack, Text, Title } from '@mantine/core';
+import { useMemo } from 'react';
 
 // Import for type checking
 import { checkPluginVersion, type InvenTreePluginContext } from '@inventreedb/ui';
 import { ApiEndpoints, apiUrl, ModelType } from '@inventreedb/ui';
+import { BarChart } from '@mantine/charts';
+import { IconCalendarTime } from '@tabler/icons-react';
+
+export const chartData = [
+  { month: 'January', Smartphones: 1200, Laptops: 900, Tablets: 200 },
+  { month: 'February', Smartphones: 1900, Laptops: 1200, Tablets: 400 },
+  { month: 'March', Smartphones: 400, Laptops: 1000, Tablets: 200 },
+  { month: 'April', Smartphones: 1000, Laptops: 200, Tablets: 800 },
+  { month: 'May', Smartphones: 800, Laptops: 1400, Tablets: 1200 },
+  { month: 'June', Smartphones: 750, Laptops: 600, Tablets: 1000 },
+];
+
+export function ForecastingChart() {
+  return (
+    <BarChart
+      h={300}
+      data={chartData}
+      dataKey="month"
+      series={[
+        { name: 'Smartphones', color: 'violet.6' },
+        { name: 'Laptops', color: 'blue.6' },
+        { name: 'Tablets', color: 'teal.6' },
+      ]}
+      tickLine="y"
+    />
+  );
+}
+
 
 /**
  * Render a custom panel with the provided context.
@@ -21,14 +48,6 @@ function InvenTreeForecastingPanel({
         return context.model == ModelType.part ? context.id || null: null;
     }, [context.model, context.id]);
 
-    // Hello world - counter example
-    const [ counter, setCounter ] = useState<number>(0);
-
-    // Extract context information
-    const instance: string = useMemo(() => {
-        const data = context?.instance ?? {};
-        return JSON.stringify(data, null, 2);
-    }, [context.instance]);
 
     // Custom form to edit the selected part
     const editPartForm = context.forms.edit({
@@ -46,53 +65,53 @@ function InvenTreeForecastingPanel({
         },
         successMessage: null,
         onFormSuccess: () => {
-            notifications.show({
-                title: 'Success',
-                message: 'Part updated successfully!',
-                color: 'green',
-            });
+            // notifications.show({
+            //     title: 'Success',
+            //     message: 'Part updated successfully!',
+            //     color: 'green',
+            // });
         }
     });
 
     // Custom callback function example
-    const openForm = useCallback(() => {
-        editPartForm?.open();
-    }, [editPartForm]);
+    // const openForm = useCallback(() => {
+    //     editPartForm?.open();
+    // }, [editPartForm]);
 
-    // Navigation functionality example
-    const gotoDashboard = useCallback(() => {
-        context.navigate('/home');
-    }, [context]);
+    // // Navigation functionality example
+    // const gotoDashboard = useCallback(() => {
+    //     context.navigate('/home');
+    // }, [context]);
+
+    const primary : string = useMemo(() => {
+        return context.theme.primaryColor;
+    }, [context.theme.primaryColor]);
 
     return (
         <>
         {editPartForm.modal}
         <Stack gap="xs">
-        <Title order={3}>InvenTree Forecasting</Title>
-        <Text>
-            This is a custom panel for the InvenTreeForecasting plugin.
-        </Text>
-        <Group justify='apart' wrap='nowrap' gap='sm'>
-            <Button color='blue' onClick={gotoDashboard}>
-                Go to Dashboard
-            </Button>
-            {partId && <Button color='green' onClick={openForm}>
-                Edit  Part
-            </Button>}
-            <Button onClick={() => setCounter(counter + 1)}>
-                Increment Counter
-            </Button>
-            <Text size='xl'>Counter: {counter}</Text>
-        </Group>
-        {instance ? (
-            <Alert title="Instance Data" color="blue">
-                {instance}
-            </Alert>
-        ) : (
-            <Alert title="No Instance" color="yellow">
-                No instance data available
-            </Alert>
-        )}
+        <Alert color='blue' icon={<IconCalendarTime />}>
+            <Text>Provides stock forecasting information basd on scheduled orders</Text>
+        </Alert>
+        <Accordion multiple defaultValue={['chart']}>
+            <Accordion.Item value="chart">
+                <Accordion.Control>
+                    <Title order={4} c={primary} >Forecasting Chart</Title>
+                </Accordion.Control>
+                <Accordion.Panel>
+                    <ForecastingChart />
+                </Accordion.Panel>
+            </Accordion.Item>
+            <Accordion.Item value="table">
+                <Accordion.Control>
+                    <Title order={4} c={primary} >Forecasting Table</Title>
+                </Accordion.Control>
+                <Accordion.Panel>
+                    TABLE DATA HERE?
+                </Accordion.Panel>
+            </Accordion.Item>
+        </Accordion>
         </Stack>
         </>
     );

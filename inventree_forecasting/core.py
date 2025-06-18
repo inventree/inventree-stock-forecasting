@@ -52,7 +52,7 @@ class InvenTreeForecasting(SettingsMixin, UserInterfaceMixin, InvenTreePlugin):
         # Only display this panel for the 'part' target
         if context.get('target_model') == 'part':
             panels.append({
-                'key': 'inventree-forecasting-panel',
+                'key': 'stock-forecasting',
                 'title': _('Stock Forecasting'),
                 'description': _('Stock level forecasting'),
                 'icon': 'ti:calendar-time:outline',
