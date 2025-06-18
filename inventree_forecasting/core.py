@@ -47,13 +47,15 @@ class InvenTreeForecasting(SettingsMixin, UserInterfaceMixin, InvenTreePlugin):
 
         panels = []
 
+        # TODO: Hide for users who are *not* in the correct group
+
         # Only display this panel for the 'part' target
         if context.get('target_model') == 'part':
             panels.append({
                 'key': 'inventree-forecasting-panel',
                 'title': _('Stock Forecasting'),
                 'description': _('Stock level forecasting'),
-                'icon': 'ti:calendar-bolt:outline',
+                'icon': 'ti:calendar-time:outline',
                 'source': self.plugin_static_file('Panel.js:renderInvenTreeForecastingPanel'),
                 'context': {
                     # Provide additional context data to the panel
