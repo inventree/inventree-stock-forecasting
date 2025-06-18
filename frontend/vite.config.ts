@@ -29,7 +29,7 @@ export default defineConfig({
     rollupOptions: {
       preserveEntrySignatures: "exports-only",
       input: [
-        './src/Panel.tsx',
+        './src/ForecastingPanel.tsx',
       ],
       output: {
         dir: '../inventree_forecasting/static',

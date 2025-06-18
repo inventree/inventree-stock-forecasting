@@ -56,7 +56,7 @@ class InvenTreeForecasting(SettingsMixin, UserInterfaceMixin, InvenTreePlugin):
                 'title': _('Stock Forecasting'),
                 'description': _('Stock level forecasting'),
                 'icon': 'ti:calendar-time:outline',
-                'source': self.plugin_static_file('Panel.js:renderInvenTreeForecastingPanel'),
+                'source': self.plugin_static_file('ForecastingPanel.js:renderInvenTreeForecastingPanel'),
                 'context': {
                     # Provide additional context data to the panel
                     'settings': self.get_settings_dict(),
