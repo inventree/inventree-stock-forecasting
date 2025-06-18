@@ -30,8 +30,6 @@ export default defineConfig({
       preserveEntrySignatures: "exports-only",
       input: [
         './src/Panel.tsx',
-        
-        
       ],
       output: {
         dir: '../inventree_forecasting/static',
