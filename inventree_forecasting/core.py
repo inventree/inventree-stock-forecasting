@@ -15,7 +15,7 @@ class InvenTreeForecasting(SettingsMixin, UserInterfaceMixin, InvenTreePlugin):
     # Plugin metadata
     TITLE = "InvenTree Forecasting"
     NAME = "InvenTreeForecasting"
-    SLUG = "inventree-forecasting"
+    SLUG = "stock-forecasting"
     DESCRIPTION = "Provide stock forecasting based on scheduled orders"
     VERSION = PLUGIN_VERSION
 
