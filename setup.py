@@ -23,11 +23,11 @@ with open("README.md", encoding="utf-8") as f:
     long_description = f.read()
 
 setuptools.setup(
-    name="inventree_forecasting",
+    name="inventree-stock-forecasting",
     version=inventree_forecasting.PLUGIN_VERSION,
     author="Oliver Walters",
     author_email="oliver.henry.walters@gmail.com",
-    description="Provide stock forecasting for InvenTree based on scheduled orders",
+    description="Stock forecasting for InvenTree based on scheduled orders",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/inventree/inventree-forecasting",
