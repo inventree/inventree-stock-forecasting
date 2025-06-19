@@ -13,4 +13,5 @@ exclude = [
     ".venv",
     ".env",
 ]
+
 src=["inventree_forecasting"]
