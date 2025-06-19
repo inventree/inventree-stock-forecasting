@@ -1,48 +1,26 @@
-import { Anchor, Code, Divider, Highlight, Paper, SimpleGrid, Stack, Text } from '@mantine/core';
+import { useState } from 'react'
 
-
-const DOCS_URL : string = "https://docs.inventree.org/en/latest/extend/plugins/ui/";
-
-
-// This is a test page for the InvenTreeForecasting plugin.
-// This page is *not* part of the plugin itself, but is used to test the plugin.
-export default function App() {
+function App() {
+  const [count, setCount] = useState(0)
 
   return (
     <>
-    <Paper p='md' m='lg' shadow='md' withBorder>
-      <SimpleGrid cols={3}>
-        <Paper p='md' m='md' withBorder>
-        <Stack>
-      <Text size="lg" c='blue' >
-        InvenTreeForecasting
-      </Text>
-      <Divider />
-      <Highlight highlight={['inventree-forecasting']}>
-        This is a test page for the inventree-forecasting plugin. 
-      </Highlight>
-        </Stack>
-        </Paper>
-        <Paper p='md' m='md' withBorder>
-        <Stack>
-          <Text size='lg' c='blue'>Building</Text>
-          <Divider />
-          <Text>To build the plugin code, run:</Text>
-          <Code>npm run build</Code>
-        </Stack>
-        </Paper>
-        <Paper p='md' m='md' withBorder>
-        <Stack>
-          <Text size='lg' c='blue'>Developer Documentation</Text>
-          <Divider />
-          <Text>Read the plugin developer documentation:</Text>
-          <Anchor href={DOCS_URL} target="_blank" rel="noopener noreferrer">
-            {DOCS_URL}
-          </Anchor>
-        </Stack>
-        </Paper>
-      </SimpleGrid>
-    </Paper>
+      <div>
+      </div>
+      <h1>Vite + React</h1>
+      <div className="card">
+        <button onClick={() => setCount((count) => count + 1)}>
+          count is {count}
+        </button>
+        <p>
+          Edit <code>src/App.tsx</code> and save to test HMR
+        </p>
+      </div>
+      <p className="read-the-docs">
+        Click on the Vite and React logos to learn more
+      </p>
     </>
-  );
+  )
 }
+
+export default App

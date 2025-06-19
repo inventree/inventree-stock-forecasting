@@ -1,6 +1,6 @@
-# InvenTree Forecasting- Frontend Code
+# InvenTree Stock Scheduling - Frontend Code
 
-This directory contains the frontend code for the InvenTree Forecasting plugin.
+This directory contains the frontend code for the InvenTree Stock Scheduling plugin.
 
 ## Architecture
 
@@ -24,10 +24,10 @@ This project uses [Vite](https://vitejs.dev/) as the build tool. We followed [th
 To compile the frontend code, run:
 
 ```bash
-npm run build
+npm run build --emptyOutDir
 ```
 
-This will compile the frontend into the `../inventree_forecasting/static` directory (ready for distribution).
+This will compile the frontend into the `../order_history/static` directory (ready for distribution).
 
 Note: The target directory is intentionally outside of the frontend directory, so that the compiled files are correctly bundled into the python package install.
 
