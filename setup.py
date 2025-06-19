@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import importlib
-import importlib.util
 import os
 import setuptools
 
@@ -23,20 +22,19 @@ with open("README.md", encoding="utf-8") as f:
     long_description = f.read()
 
 setuptools.setup(
-    name="inventree_forecasting",
-    version=inventree_forecasting.PLUGIN_VERSION,
+    name="inventree-scheduling",
+    version=PLUGIN_VERSION,
     author="Oliver Walters",
     author_email="oliver.henry.walters@gmail.com",
-    description="Provide stock forecasting for InvenTree based on scheduled orders",
+    description="Stock scheduling plugin for InvenTree",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/inventree/inventree-forecasting",
     license="MIT",
     packages=setuptools.find_packages(),
-    keywords="inventree plugin",
     include_package_data=True,
     install_requires=[
-        # Enter your plugin library dependencies here
+        'tablib',
     ],
     setup_requires=[
         "wheel",
@@ -45,7 +43,7 @@ setuptools.setup(
     python_requires=">=3.9",
     entry_points={
         "inventree_plugins": [
-            "InvenTreeForecasting = inventree_forecasting.core:InvenTreeForecasting"
+            "StockSchedulingPlugin = scheduling.core:StockSchedulingPlugin"
         ]
     },
 )
