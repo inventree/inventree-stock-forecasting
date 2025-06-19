@@ -8,6 +8,7 @@ import { checkPluginVersion, getDetailUrl, ModelType, navigateToLink, type Inven
 import { ChartTooltipProps, LineChart } from '@mantine/charts';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { IconExclamationCircle, IconInfoCircle } from '@tabler/icons-react';
 
 const FORECASTING_URL : string = "plugin/stock-forecasting/forecast/";
 
@@ -194,6 +195,17 @@ export function ForecastingChart({
     return series;
 
   }, [minimumStock, maximumStock]);
+
+  // No useful information to display
+  if (chartData.length <= 1) {
+    return (
+      <Alert color="yellow" title="Insufficient Information" icon={<IconInfoCircle />}>
+        <Text>
+          The available forecasting data is insufficient to display a meaningful chart. Please ensure that there are future entries with specified dates.
+        </Text>
+      </Alert>
+    );
+  }
 
   return (
     <LineChart
@@ -410,7 +422,7 @@ function InvenTreeForecastingPanel({
 
     if (forecastingQuery.isError) {
       return (
-        <Alert color="red" title="Error loading forecasting data">
+        <Alert color="red" title="Error Loading Data" icon={<IconExclamationCircle />} >
           <Text>{forecastingQuery.error.message}</Text>
         </Alert>
       );
@@ -418,7 +430,7 @@ function InvenTreeForecastingPanel({
 
     if (!hasForecastingData) {
       return (
-        <Alert color="yellow" title="No forecasting data available">
+        <Alert color="yellow" title="No Data Available" icon={<IconInfoCircle />}>
           <Text>
             There is no forecasting data available for the selected part.
           </Text>
