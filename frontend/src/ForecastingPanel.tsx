@@ -1,85 +1,246 @@
-import { Accordion, Alert, Skeleton, Stack, Text, Title } from '@mantine/core';
+import { Accordion, Alert, Divider, Paper, Skeleton, Stack, Text, Title } from '@mantine/core';
 import { useEffect, useMemo, useState } from 'react';
 
 import { DataTable } from 'mantine-datatable';
 
 // Import for type checking
 import { checkPluginVersion, type InvenTreePluginContext } from '@inventreedb/ui';
-import { LineChart } from '@mantine/charts';
+import { ChartTooltipProps, LineChart } from '@mantine/charts';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 
 const FORECASTING_URL : string = "plugin/stock-forecasting/forecast/";
 
-export const chartData = [
-  {
-    date: 'Mar 22',
-    Apples: 2890,
-    Oranges: 2338,
-    Tomatoes: 2452,
-  },
-  {
-    date: 'Mar 23',
-    Apples: 2756,
-    Oranges: 2103,
-    Tomatoes: 2402,
-  },
-  {
-    date: 'Mar 24',
-    Apples: 3322,
-    Oranges: 986,
-    Tomatoes: 1821,
-  },
-  {
-    date: 'Mar 25',
-    Apples: 3470,
-    Oranges: 2108,
-    Tomatoes: 2809,
-  },
-  {
-    date: 'Mar 26',
-    Apples: 3129,
-    Oranges: 1726,
-    Tomatoes: 2290,
-  },
-];
+
+function ChartTooltip({ label, payload }: Readonly<ChartTooltipProps>) {
+  if (!payload) {
+    return null;
+  }
+
+  if (label && typeof label == 'number') {
+    label = dayjs(label).format('YYYY-MM-DD');
+  }
+
+  const quantity = payload.find((item) => item.name == 'quantity');
+  const minimum = payload.find((item) => item.name == 'minimum');
+  const maximum = payload.find((item) => item.name == 'maximum');
+
+  return (
+    <Paper px='md' py='sm' withBorder shadow='md' radius='md'>
+      <Text key='title'>{label}</Text>
+      <Divider />
+      <Text key='scheduled' c={quantity?.color} fz='sm'>
+        Forecast : {quantity?.value}
+      </Text>
+      {maximum != quantity && (
+        <Text key='maximum' c={maximum?.color} fz='sm'>
+          Maximum : {maximum?.value}
+        </Text>
+      )}
+      {minimum != quantity && (
+        <Text key='minimum' c={minimum?.color} fz='sm'>
+          Minimum : {minimum?.value}
+        </Text>
+      )}
+    </Paper>
+  );
+}
+
 
 export function ForecastingChart({
-  data,
+  entries,
+  initialStock,
+  minimumStock,
+  maximumStock
 }: {
-  data: any[];
+  entries: any[];
+  initialStock: number,
+  minimumStock: number,
+  maximumStock: number
 }) {
 
-  console.log("entries:", data);
+  // Construct chart data based on the provided entries
+  const chartData : any[] = useMemo(() => {
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Set date bounds for the chart
+    let minDate: Date = new Date();
+    let maxDate: Date = new Date();
+
+    // Track min / max forecast stock levels
+    let stock: number = initialStock;
+    let minStock : number = stock;
+    let maxStock : number = stock;
+
+    // First, iterate through the entries to find the "speculative" entries
+    // Here, "speculative" means either:
+    // - Entries which do not have an associated date
+    // - Entries which have a date in the past (i.e. before today)
+    entries.forEach((entry) => {
+      if (entry.date == null || new Date(entry.date) < today) {
+        if (entry.quantity < 0) {
+          minStock += entry.quantity;
+        } else if (entry.quantity > 0) {
+          maxStock += entry.quantity;
+        }
+      }
+    });
+
+    // Construct an initial entry (i.e. current stock level as of *today*)
+    const chartEntries: any[] = [
+      {
+        date: today.valueOf(),
+        delta: 0,
+        quantity: stock,
+        minimum: minStock,
+        maximum: maxStock,
+        lowStockThreshold: minimumStock,
+        highStockThreshold: maximumStock
+      }
+    ];
+
+    // Now, iterate through the entries to construct the chart data
+    // At this point, only consider entries which have a recorded date
+    entries.filter((entry) => !!entry.date).forEach((entry) => {
+      const date = new Date(entry.date);
+
+      // If the date is before today, skip it
+      if (date < today) {
+        return;
+      }
+
+      // Update date limits
+      if (date < minDate) {
+        minDate = date;
+      } 
+
+      if (date > maxDate) {
+        maxDate = date;
+      }
+
+      // Update stock levels based on the entry
+      stock += entry.quantity;
+      minStock += entry.quantity;
+      maxStock += entry.quantity;
+
+      chartEntries.push({
+        ...entry,
+        date: new Date(entry.date).valueOf(),
+        quantity: stock,
+        minimum: minStock,
+        maximum: maxStock,
+        lowStockThreshold: minimumStock,
+        highStockThreshold: maximumStock,
+      })
+    });
+
+    return chartEntries;
+
+  }, [entries, initialStock, minimumStock, maximumStock]);
+
+  // Calculate date limits of the chart
+  const chartLimits: number[] = useMemo(() => {
+
+    let minDate : Date = new Date();
+    let maxDate : Date = new Date();
+
+    if (chartData.length > 0) {
+      minDate = new Date(chartData[0].date);
+      maxDate = new Date(chartData[chartData.length - 1].date);
+    }
+
+    // Expand limits by one day on either side
+    minDate.setDate(minDate.getDate() - 1);
+    maxDate.setDate(maxDate.getDate() + 1);
+
+    return [minDate.valueOf(), maxDate.valueOf()];
+
+  }, [chartData])
+
+  const chartSeries: any[] = useMemo(() => {
+
+    const series: any[] = [
+      {
+        name: 'quantity',
+        label: 'Quantity',
+        color: 'blue.6',
+      },
+      {
+        name: 'minimum',
+        label: 'Minimum',
+        color: 'yellow.6',
+      },
+      {
+        name: 'maximum',
+        label: 'Maximum',
+        color: 'teal.6',
+      }
+    ];
+
+    if (minimumStock > 0) {
+      series.push({
+        name: 'lowStockThreshold',
+        label: 'Low Stock Threshold',
+        color: 'red.6',
+      });
+    }
+
+    if (maximumStock > 0) {
+      series.push({
+        name: 'highStockThreshold',
+        label: 'High Stock Threshold',
+        color: 'red.6',
+      });
+    }
+
+    return series;
+
+  }, [minimumStock, maximumStock]);
 
   return (
     <LineChart
-      h={300}
+      h={500}
       data={chartData}
       dataKey="date"
-      series={[
-        { name: 'Apples', color: 'indigo.6' },
-        { name: 'Oranges', color: 'blue.6' },
-        { name: 'Tomatoes', color: 'teal.6' },
-      ]}
-      curveType="linear"
+      withLegend
+      withYAxis
+      tooltipProps={{
+        content: ({ label, payload }) => (
+          <ChartTooltip label={label} payload={payload} />
+        )
+      }}
+      yAxisLabel="Forecast Quantity"
+      xAxisLabel="Date"
+      xAxisProps={{
+        domain: chartLimits,
+        scale: 'time',
+        type: 'number',
+        tickFormatter: (value: number) => {
+          return dayjs(value).format('YYYY-MM-DD');
+        }
+      }}
+      series={chartSeries}
     />
   );
 }
 
 
 export function ForecastingTable({
-  data
+  entries
 }: {
-  data: any[];
+  entries: any[];
 }) {
 
   // Keep an internal copy of the records, so we can sort the table
   const [ records, setRecords ] = useState<any[]>([]);
 
   useEffect(() => {
-    setRecords(data);
-  }, [data]);
+    setRecords(entries);
+  }, [entries]);
+
+  // TODO: Add "total quantity" column
 
   const columns = useMemo(() => {
     return [
@@ -88,18 +249,32 @@ export function ForecastingTable({
         title: 'Date',
         sortable: true,
         render: (record: any) => {
+          // No date specified
           if (!record.date) {
             return <Text c='red' fs="italic">No date specified</Text>
-          } else {
-            const m = dayjs(record.date);
-            return m.format('YYYY-MM-DD');
           }
+
+          // Date is specified, but in the past
+          if (dayjs(record.date).isBefore(dayjs())) {
+            return <Text c='red' fs="italic">{record.date}</Text>
+          }
+          
+          return <Text>{record.date}</Text>
         }
       },
       {
         accessor: 'quantity',
-        title: 'Quantity',
+        title: 'Quantity Change',
         sortable: true,
+        render: (record: any) => {
+          let prefix : string = '';
+          
+          if (record.quantity > 0) {
+            prefix = '+';
+          }
+
+          return <Text>{prefix}{record.quantity}</Text>;
+        }
       },
       {
         accessor: 'label',
@@ -107,7 +282,7 @@ export function ForecastingTable({
         sortable: true,
       },
       {
-        accessor: 'description',
+        accessor: 'title',
         title: 'Description',
         sortable: true,
       }
@@ -219,15 +394,20 @@ function InvenTreeForecastingPanel({
                     <Title order={4} c={primary} >Forecasting Chart</Title>
                 </Accordion.Control>
                 <Accordion.Panel>
-                    <ForecastingChart data={forecastingQuery.data?.entries ?? []} />
+                    <ForecastingChart
+                      entries={forecastingQuery.data?.entries ?? []}
+                      initialStock={forecastingQuery.data?.in_stock ?? 0}
+                      minimumStock={forecastingQuery.data?.min_stock ?? 0}
+                      maximumStock={forecastingQuery.data?.max_stock ?? 0}
+                    />
                 </Accordion.Panel>
             </Accordion.Item>
             <Accordion.Item value="table">
                 <Accordion.Control>
-                    <Title order={4} c={primary} >Forecasting Table</Title>
+                    <Title order={4} c={primary} >Forecasting Data</Title>
                 </Accordion.Control>
                 <Accordion.Panel>
-                  <ForecastingTable data={forecastingQuery.data?.entries ?? []} />
+                  <ForecastingTable entries={forecastingQuery.data?.entries ?? []} />
                 </Accordion.Panel>
             </Accordion.Item>
         </Accordion>

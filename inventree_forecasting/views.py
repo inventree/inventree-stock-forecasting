@@ -131,14 +131,15 @@ class PartForecastingView(RetrieveAPI):
             line_quantity = max(0, line.quantity - line.received)
             quantity = line.part.base_quantity(line_quantity)
 
-            entries.append(
-                self.generate_entry(
-                    line.order,
-                    quantity,
-                    target_date,
-                    title=_("Incoming Purchase Order"),
+            if abs(quantity) > 0:
+                entries.append(
+                    self.generate_entry(
+                        line.order,
+                        quantity,
+                        target_date,
+                        title=_("Incoming Purchase Order"),
+                    )
                 )
-            )
 
         return entries
     
@@ -157,14 +158,15 @@ class PartForecastingView(RetrieveAPI):
             # Negative quantities indicate outgoing sales orders
             quantity = -1 * max(0, line.quantity - line.shipped)
 
-            entries.append(
-                self.generate_entry(
-                    line.order,
-                    quantity,
-                    target_date,
-                    title=_("Outgoing Sales Order"),
+            if abs(quantity) > 0:
+                entries.append(
+                    self.generate_entry(
+                        line.order,
+                        quantity,
+                        target_date,
+                        title=_("Outgoing Sales Order"),
+                    )
                 )
-            )
 
         return entries
 
@@ -181,14 +183,15 @@ class PartForecastingView(RetrieveAPI):
         for build in build_orders:
             quantity = max(build.quantity - build.completed, 0)
 
-            entries.append(
-                self.generate_entry(
-                    build,
-                    quantity,
-                    build.target_date,
-                    title=_("Assembled via Build Order")
+            if abs(quantity) > 0:
+                entries.append(
+                    self.generate_entry(
+                        build,
+                        quantity,
+                        build.target_date,
+                        title=_("Assembled via Build Order")
+                    )
                 )
-            )
 
         return entries
 
@@ -260,14 +263,15 @@ class PartForecastingView(RetrieveAPI):
                     if allocation.stock_item.part == part:
                         part_allocated_quantity += allocation.quantity
 
-                entries.append(
-                    self.generate_entry(
-                        build,
-                        -1 * part_allocated_quantity,
-                        build.target_date,
-                        title=_("Allocated to Build Order"),
+                if part_allocated_quantity > 0:
+                    entries.append(
+                        self.generate_entry(
+                            build,
+                            -1 * part_allocated_quantity,
+                            build.target_date,
+                            title=_("Allocated to Build Order"),
+                        )
                     )
-                )
 
                 # If the allocated quantity is not sufficient, add a "speculative" quantity for the build order
                 if required_quantity > total_allocated_quantity:
@@ -276,7 +280,7 @@ class PartForecastingView(RetrieveAPI):
                             build,
                             -1 * (required_quantity - total_allocated_quantity),
                             build.target_date,
-                            title=_("Required for Order Allocation"),
+                            title=_("Required for Build Order"),
                         )
                     )
 
