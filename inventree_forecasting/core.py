@@ -3,12 +3,12 @@
 from plugin import InvenTreePlugin
 
 from django.utils.translation import gettext_lazy as _
-from plugin.mixins import SettingsMixin, UserInterfaceMixin
+from plugin.mixins import SettingsMixin, UrlsMixin, UserInterfaceMixin
 
 from . import PLUGIN_VERSION
 
 
-class InvenTreeForecasting(SettingsMixin, UserInterfaceMixin, InvenTreePlugin):
+class InvenTreeForecasting(SettingsMixin, UrlsMixin, UserInterfaceMixin, InvenTreePlugin):
 
     """InvenTreeForecasting - custom InvenTree plugin."""
 
@@ -66,4 +66,12 @@ class InvenTreeForecasting(SettingsMixin, UserInterfaceMixin, InvenTreePlugin):
         
         return panels
     
-    
+    def setup_urls(self):
+        """Returns the URLs defined by this plugin."""
+
+        from django.urls import path
+        from .views import PartForecastingView
+
+        return [
+            path('forecast/', PartForecastingView.as_view(), name='part-forecasting'),
+        ]    
