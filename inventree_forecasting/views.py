@@ -1,6 +1,7 @@
 """API views for the InvenTree Forecasting plugin."""
 
 import functools
+import tablib
 
 from datetime import date
 from typing import cast, Optional
@@ -11,6 +12,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions
 from rest_framework.response import Response
 
+from InvenTree.helpers import DownloadFile
 from InvenTree.mixins import RetrieveAPI
 import build.models as build_models
 import build.status_codes as build_status
@@ -26,6 +28,44 @@ class PartForecastingView(RetrieveAPI):
 
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = PartForecastingSerializer
+
+    def export_data(self, part: part_models.Part, entries: list, export_format: str = 'csv'):
+        """Export the forecasting data to file for download."""
+
+        # Construct the set of headers
+        headers = [
+            _('Date'),
+            _('Label'),
+            _('Title'),
+            _('Model Type'),
+            _('Model ID'),
+            _('Quantity'),
+            _('Stock Level')
+        ]
+
+        dataset = tablib.Dataset(headers=headers)
+
+        # Track quantity over time
+        stock = part.get_stock_count(include_variants=False)
+
+        for entry in entries:
+            stock += entry.get('quantity', 0)
+            dataset.append([
+                entry.get('date', ''),
+                entry.get('label', ''),
+                entry.get('title', ''),
+                entry.get('model_type', ''),
+                entry.get('model_id', ''),
+                entry.get('quantity', 0),
+                stock
+            ])
+
+        data = dataset.export(export_format)
+
+        return DownloadFile(
+            data,
+            filename=f'InvenTree_Stock_Forecasting_{part.pk}.{export_format}',
+        )
 
     def get(self, request, *args, **kwargs):
         """Handle GET request to retrieve forecasting data for a specific part."""
@@ -52,6 +92,10 @@ class PartForecastingView(RetrieveAPI):
         response_serializer = self.serializer_class(data=forecasting_data)
         response_serializer.is_valid(raise_exception=True)
         
+        if export_format := data.get('export'):
+            # If an export format is specified, export the data
+            return self.export_data(part, response_serializer.data['entries'], export_format)
+
         return Response(response_serializer.data, status=200)
 
     def get_entries(self, part: part_models.Part) -> list:

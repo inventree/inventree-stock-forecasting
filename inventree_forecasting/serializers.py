@@ -22,6 +22,11 @@ class PartForecastingRequestSerializer(serializers.Serializer):
         help_text=_('The part for which to retrieve forecasting data')
     )
 
+    export = serializers.ChoiceField(
+        choices=[(choice, choice) for choice in ['csv', 'tsv', 'xls', 'xlsx']],
+        required=False,
+        label=_('Export Format')
+    )
 
 class PartForecastingEntrySerializer(serializers.Serializer):
     """Serializer for a single entry in part forecasting data."""
@@ -79,6 +84,7 @@ class PartForecastingSerializer(serializers.Serializer):
             'min_stock',
             'max_stock',
             'entries',
+            'export',
         ]
 
     part = serializers.PrimaryKeyRelatedField(
