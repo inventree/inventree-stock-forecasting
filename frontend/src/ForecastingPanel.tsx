@@ -1,11 +1,15 @@
-import { Accordion, Alert, Stack, Text, Title } from '@mantine/core';
-import { useMemo } from 'react';
+import { Accordion, Alert, Stack, Title } from '@mantine/core';
+import { useEffect, useMemo } from 'react';
+
+import { DataTable } from 'mantine-datatable';
 
 // Import for type checking
 import { checkPluginVersion, type InvenTreePluginContext } from '@inventreedb/ui';
 import { ApiEndpoints, apiUrl, ModelType } from '@inventreedb/ui';
 import { LineChart } from '@mantine/charts';
-import { IconCalendarTime } from '@tabler/icons-react';
+import { useQuery } from '@tanstack/react-query';
+
+const FORECASTING_URL : string = "plugin/stock-forecasting/forecast/";
 
 export const chartData = [
   {
@@ -57,6 +61,38 @@ export function ForecastingChart() {
 }
 
 
+export function ForecastingTable() {
+
+  const columns = useMemo(() => {
+    return [
+      {
+        accessor: 'date',
+        title: 'Date',
+      },
+      {
+        accessor: 'quantity',
+        title: 'Quantity',
+      },
+      {
+        accessor: 'label',
+        title: 'Reference',
+      },
+      {
+        accessor: 'description',
+        title: 'Description',
+      }
+    ]
+  }, []);
+
+  return (
+    <DataTable 
+      columns={columns}
+      records={[]}
+    />
+  )
+}
+
+
 /**
  * Render a custom panel with the provided context.
  * Refer to the InvenTree documentation for the context interface
@@ -67,6 +103,10 @@ function InvenTreeForecastingPanel({
 }: {
     context: InvenTreePluginContext;
 }) {
+
+  useEffect(() => {
+    console.log("context:", context);
+  }, [context]);
 
     const partId = useMemo(() => {
         return context.model == ModelType.part ? context.id || null: null;
@@ -97,6 +137,31 @@ function InvenTreeForecastingPanel({
         }
     });
 
+  const forecastingQuery = useQuery(
+    {
+      enabled: !!context.id,
+      queryKey: ['forecasting', context.id],
+      refetchOnMount: false,
+      refetchOnWindowFocus: false,
+      queryFn: async () => {
+        return context.api?.get(`/${FORECASTING_URL}`, {
+          params: {
+            part: context.id,
+          }
+        }).then((response: any) => {
+          return response.data;
+        }).catch(() => {
+          return [];
+        }) ?? [];
+      }
+    },
+    context.queryClient
+  );
+
+  useEffect(() => {
+    console.log("data:", forecastingQuery.data);
+  }, [forecastingQuery.data]);
+
     // Custom callback function example
     // const openForm = useCallback(() => {
     //     editPartForm?.open();
@@ -115,10 +180,10 @@ function InvenTreeForecastingPanel({
         <>
         {editPartForm.modal}
         <Stack gap="xs">
-        <Alert color='blue' icon={<IconCalendarTime />}>
+        {/* <Alert color='blue' icon={<IconCalendarTime />}>
             <Text>Provides stock forecasting information basd on scheduled orders</Text>
-        </Alert>
-        <Accordion multiple defaultValue={['chart']}>
+        </Alert> */}
+        <Accordion multiple defaultValue={['chart', 'table']}>
             <Accordion.Item value="chart">
                 <Accordion.Control>
                     <Title order={4} c={primary} >Forecasting Chart</Title>
@@ -132,7 +197,7 @@ function InvenTreeForecastingPanel({
                     <Title order={4} c={primary} >Forecasting Table</Title>
                 </Accordion.Control>
                 <Accordion.Panel>
-                    TABLE DATA HERE?
+                  <ForecastingTable />
                 </Accordion.Panel>
             </Accordion.Item>
         </Accordion>
