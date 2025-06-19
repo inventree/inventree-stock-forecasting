@@ -8,11 +8,11 @@ import {
 } from '@inventreedb/ui';
 import { type ChartTooltipProps, LineChart } from '@mantine/charts';
 import {
-  Accordion,
   Alert,
+  Divider,
   Anchor,
   Button,
-  Divider,
+  Accordion,
   Group,
   Menu,
   Paper,
