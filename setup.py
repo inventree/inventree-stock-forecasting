@@ -12,12 +12,14 @@ import setuptools
 """
 
 """Read the plugin version from the source code."""
-module_path = os.path.join(os.path.dirname(__file__), "inventree_forecasting", "__init__.py")
+module_path = os.path.join(
+    os.path.dirname(__file__), "inventree_forecasting", "__init__.py"
+)
 spec = importlib.util.spec_from_file_location("inventree_forecasting", module_path)
 inventree_forecasting = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(inventree_forecasting)
 
-with open('README.md', encoding='utf-8') as f:
+with open("README.md", encoding="utf-8") as f:
     long_description = f.read()
 
 setuptools.setup(
@@ -27,7 +29,7 @@ setuptools.setup(
     author_email="oliver.henry.walters@gmail.com",
     description="Provide stock forecasting for InvenTree based on scheduled orders",
     long_description=long_description,
-    long_description_content_type='text/markdown',
+    long_description_content_type="text/markdown",
     url="https://github.com/inventree/inventree-forecasting",
     license="MIT",
     packages=setuptools.find_packages(),
