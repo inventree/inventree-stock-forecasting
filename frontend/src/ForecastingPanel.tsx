@@ -1,10 +1,10 @@
-import { Accordion, Alert, Divider, Paper, Skeleton, Stack, Text, Title } from '@mantine/core';
+import { Accordion, Alert, Anchor, Divider, Paper, Skeleton, Stack, Text, Title } from '@mantine/core';
 import { useEffect, useMemo, useState } from 'react';
 
 import { DataTable } from 'mantine-datatable';
 
 // Import for type checking
-import { checkPluginVersion, type InvenTreePluginContext } from '@inventreedb/ui';
+import { checkPluginVersion, getDetailUrl, ModelType, navigateToLink, type InvenTreePluginContext } from '@inventreedb/ui';
 import { ChartTooltipProps, LineChart } from '@mantine/charts';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -228,9 +228,11 @@ export function ForecastingChart({
 
 
 export function ForecastingTable({
-  entries
+  entries,
+  context
 }: {
   entries: any[];
+  context: InvenTreePluginContext;
 }) {
 
   // Keep an internal copy of the records, so we can sort the table
@@ -280,6 +282,39 @@ export function ForecastingTable({
         accessor: 'label',
         title: 'Reference',
         sortable: true,
+        render: (record: any) => {
+          const url = getDetailUrl(record.model_type, record.model_id);
+          
+          if (url) {
+            return (
+              <Anchor
+                onClick={(event: any) => navigateToLink(url, context.navigate, event)}
+                href={url}
+                target='_blank'
+                rel='noopener noreferrer'>
+                {record.label}
+              </Anchor>
+            );
+          } else {
+            return (
+              <Text>{record.label}</Text>
+            )
+          }
+        }
+      },
+      {
+        accessor: 'model_type',
+        title: 'Model Type',
+        sortable: true,
+        render: (record: any) => {
+          // If the model type is not specified, return an empty string
+          if (!record.model_type) {
+            return '';
+          }
+
+          // Access the model information
+          return context.modelInformation[record.model_type as ModelType]?.label?.() ?? record.model_type;
+        }
       },
       {
         accessor: 'title',
@@ -287,7 +322,7 @@ export function ForecastingTable({
         sortable: true,
       }
     ]
-  }, []);
+  }, [context.modelInformation, context.locale]);
 
   return (
     <DataTable 
@@ -308,30 +343,6 @@ function InvenTreeForecastingPanel({
 }: {
     context: InvenTreePluginContext;
 }) {
-
-    // Custom form to edit the selected part
-    // const editPartForm = context.forms.edit({
-    //     url: apiUrl(ApiEndpoints.part_list, partId),
-    //     title: "Edit Part",
-    //     preFormContent: (
-    //         <Alert title="Custom Plugin Form" color="blue">
-    //             This is a custom form launched from within a plugin!
-    //         </Alert>
-    //     ),
-    //     fields: {
-    //         name: {},
-    //         description: {},
-    //         category: {},
-    //     },
-    //     successMessage: null,
-    //     onFormSuccess: () => {
-    //         // notifications.show({
-    //         //     title: 'Success',
-    //         //     message: 'Part updated successfully!',
-    //         //     color: 'green',
-    //         // });
-    //     }
-    // });
 
   const forecastingQuery = useQuery(
     {
@@ -357,7 +368,6 @@ function InvenTreeForecastingPanel({
   const hasForecastingData : boolean = useMemo(() => {
     return (forecastingQuery.data?.entries?.length ?? 0) > 0;
   }, [forecastingQuery.data]);
-
 
     const primary : string = useMemo(() => {
         return context.theme.primaryColor;
@@ -407,7 +417,10 @@ function InvenTreeForecastingPanel({
                     <Title order={4} c={primary} >Forecasting Data</Title>
                 </Accordion.Control>
                 <Accordion.Panel>
-                  <ForecastingTable entries={forecastingQuery.data?.entries ?? []} />
+                  <ForecastingTable
+                    entries={forecastingQuery.data?.entries ?? []}
+                    context={context}
+                  />
                 </Accordion.Panel>
             </Accordion.Item>
         </Accordion>
