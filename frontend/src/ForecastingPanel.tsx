@@ -1,17 +1,37 @@
-import { Accordion, Alert, Anchor, Button, Divider, Group, Menu, Paper, Skeleton, Stack, Text, Title } from '@mantine/core';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-
-import { DataTable, DataTableSortStatus } from 'mantine-datatable';
-
 // Import for type checking
-import { checkPluginVersion, getDetailUrl, ModelType, navigateToLink, type InvenTreePluginContext } from '@inventreedb/ui';
-import { ChartTooltipProps, LineChart } from '@mantine/charts';
+import {
+  checkPluginVersion,
+  getDetailUrl,
+  type InvenTreePluginContext,
+  type ModelType,
+  navigateToLink
+} from '@inventreedb/ui';
+import { type ChartTooltipProps, LineChart } from '@mantine/charts';
+import {
+  Accordion,
+  Alert,
+  Anchor,
+  Button,
+  Divider,
+  Group,
+  Menu,
+  Paper,
+  Skeleton,
+  Stack,
+  Text,
+  Title
+} from '@mantine/core';
+import {
+  IconExclamationCircle,
+  IconFileDownload,
+  IconInfoCircle
+} from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { IconExclamationCircle, IconFileDownload, IconInfoCircle } from '@tabler/icons-react';
+import { DataTable, type DataTableSortStatus } from 'mantine-datatable';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-const FORECASTING_URL : string = "plugin/stock-forecasting/forecast/";
-
+const FORECASTING_URL: string = 'plugin/stock-forecasting/forecast/';
 
 function ChartTooltip({ label, payload }: Readonly<ChartTooltipProps>) {
   if (!payload) {
@@ -43,7 +63,6 @@ function ChartTooltip({ label, payload }: Readonly<ChartTooltipProps>) {
   );
 }
 
-
 export function ForecastingChart({
   entries,
   initialStock,
@@ -51,14 +70,12 @@ export function ForecastingChart({
   maximumStock
 }: {
   entries: any[];
-  initialStock: number,
-  minimumStock: number,
-  maximumStock: number
+  initialStock: number;
+  minimumStock: number;
+  maximumStock: number;
 }) {
-
   // Construct chart data based on the provided entries
-  const chartData : any[] = useMemo(() => {
-
+  const chartData: any[] = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -68,8 +85,8 @@ export function ForecastingChart({
 
     // Track min / max forecast stock levels
     let stock: number = initialStock;
-    let minStock : number = stock;
-    let maxStock : number = stock;
+    let minStock: number = stock;
+    let maxStock: number = stock;
 
     // First, iterate through the entries to find the "speculative" entries
     // Here, "speculative" means either:
@@ -100,48 +117,48 @@ export function ForecastingChart({
 
     // Now, iterate through the entries to construct the chart data
     // At this point, only consider entries which have a recorded date
-    entries.filter((entry) => !!entry.date).forEach((entry) => {
-      const date = new Date(entry.date);
+    entries
+      .filter((entry) => !!entry.date)
+      .forEach((entry) => {
+        const date = new Date(entry.date);
 
-      // If the date is before today, skip it
-      if (date < today) {
-        return;
-      }
+        // If the date is before today, skip it
+        if (date < today) {
+          return;
+        }
 
-      // Update date limits
-      if (date < minDate) {
-        minDate = date;
-      } 
+        // Update date limits
+        if (date < minDate) {
+          minDate = date;
+        }
 
-      if (date > maxDate) {
-        maxDate = date;
-      }
+        if (date > maxDate) {
+          maxDate = date;
+        }
 
-      // Update stock levels based on the entry
-      stock += entry.quantity;
-      minStock += entry.quantity;
-      maxStock += entry.quantity;
+        // Update stock levels based on the entry
+        stock += entry.quantity;
+        minStock += entry.quantity;
+        maxStock += entry.quantity;
 
-      chartEntries.push({
-        ...entry,
-        date: new Date(entry.date).valueOf(),
-        quantity: stock,
-        minimum: minStock,
-        maximum: maxStock,
-        lowStockThreshold: minimumStock,
-        highStockThreshold: maximumStock,
-      })
-    });
+        chartEntries.push({
+          ...entry,
+          date: new Date(entry.date).valueOf(),
+          quantity: stock,
+          minimum: minStock,
+          maximum: maxStock,
+          lowStockThreshold: minimumStock,
+          highStockThreshold: maximumStock
+        });
+      });
 
     return chartEntries;
-
   }, [entries, initialStock, minimumStock, maximumStock]);
 
   // Calculate date limits of the chart
   const chartLimits: number[] = useMemo(() => {
-
-    let minDate : Date = new Date();
-    let maxDate : Date = new Date();
+    let minDate: Date = new Date();
+    let maxDate: Date = new Date();
 
     if (chartData.length > 0) {
       minDate = new Date(chartData[0].date);
@@ -153,34 +170,32 @@ export function ForecastingChart({
     maxDate.setDate(maxDate.getDate() + 1);
 
     return [minDate.valueOf(), maxDate.valueOf()];
-
-  }, [chartData])
+  }, [chartData]);
 
   const chartSeries: any[] = useMemo(() => {
-
     const series: any[] = [
       {
         name: 'minimum',
         label: 'Minimum',
-        color: 'yellow.6',
+        color: 'yellow.6'
       },
       {
         name: 'maximum',
         label: 'Maximum',
-        color: 'teal.6',
+        color: 'teal.6'
       },
       {
         name: 'quantity',
         label: 'Quantity',
-        color: 'blue.6',
-      },
+        color: 'blue.6'
+      }
     ];
 
     if (minimumStock > 0) {
       series.push({
         name: 'lowStockThreshold',
         label: 'Low Stock Threshold',
-        color: 'red.6',
+        color: 'red.6'
       });
     }
 
@@ -188,20 +203,25 @@ export function ForecastingChart({
       series.push({
         name: 'highStockThreshold',
         label: 'High Stock Threshold',
-        color: 'red.6',
+        color: 'red.6'
       });
     }
 
     return series;
-
   }, [minimumStock, maximumStock]);
 
   // No useful information to display
   if (chartData.length <= 1) {
     return (
-      <Alert color="yellow" title="Insufficient Information" icon={<IconInfoCircle />}>
+      <Alert
+        color='yellow'
+        title='Insufficient Information'
+        icon={<IconInfoCircle />}
+      >
         <Text>
-          The available forecasting data is insufficient to display a meaningful chart. Please ensure that there are future entries with specified dates.
+          The available forecasting data is insufficient to display a meaningful
+          chart. Please ensure that there are future entries with specified
+          dates.
         </Text>
       </Alert>
     );
@@ -211,7 +231,7 @@ export function ForecastingChart({
     <LineChart
       h={500}
       data={chartData}
-      dataKey="date"
+      dataKey='date'
       withLegend
       withYAxis
       tooltipProps={{
@@ -219,8 +239,8 @@ export function ForecastingChart({
           <ChartTooltip label={label} payload={payload} />
         )
       }}
-      yAxisLabel="Forecast Quantity"
-      xAxisLabel="Date"
+      yAxisLabel='Forecast Quantity'
+      xAxisLabel='Date'
       xAxisProps={{
         domain: chartLimits,
         scale: 'time',
@@ -234,7 +254,6 @@ export function ForecastingChart({
   );
 }
 
-
 export function ForecastingTable({
   entries,
   context
@@ -242,14 +261,13 @@ export function ForecastingTable({
   entries: any[];
   context: InvenTreePluginContext;
 }) {
-
   const [sortStatus, setSortStatus] = useState<DataTableSortStatus<any>>({
     columnAccessor: 'date',
-    direction: 'asc',
+    direction: 'asc'
   });
 
   // Keep an internal copy of the records, so we can sort the table
-  const [ records, setRecords ] = useState<any[]>([]);
+  const [records, setRecords] = useState<any[]>([]);
 
   useEffect(() => {
     const sortedEntries = [...entries];
@@ -279,7 +297,6 @@ export function ForecastingTable({
     }
 
     setRecords(sortedEntries);
-
   }, [entries, sortStatus]);
 
   const columns = useMemo(() => {
@@ -291,15 +308,23 @@ export function ForecastingTable({
         render: (record: any) => {
           // No date specified
           if (!record.date) {
-            return <Text c='red' fs="italic">No date specified</Text>
+            return (
+              <Text c='red' fs='italic'>
+                No date specified
+              </Text>
+            );
           }
 
           // Date is specified, but in the past
           if (dayjs(record.date).isBefore(dayjs())) {
-            return <Text c='red' fs="italic">{record.date}</Text>
+            return (
+              <Text c='red' fs='italic'>
+                {record.date}
+              </Text>
+            );
           }
-          
-          return <Text>{record.date}</Text>
+
+          return <Text>{record.date}</Text>;
         }
       },
       {
@@ -307,13 +332,18 @@ export function ForecastingTable({
         title: 'Quantity Change',
         sortable: true,
         render: (record: any) => {
-          let prefix : string = '';
-          
+          let prefix: string = '';
+
           if (record.quantity > 0) {
             prefix = '+';
           }
 
-          return <Text>{prefix}{record.quantity}</Text>;
+          return (
+            <Text>
+              {prefix}
+              {record.quantity}
+            </Text>
+          );
         }
       },
       {
@@ -322,21 +352,22 @@ export function ForecastingTable({
         sortable: true,
         render: (record: any) => {
           const url = getDetailUrl(record.model_type, record.model_id);
-          
+
           if (url) {
             return (
               <Anchor
-                onClick={(event: any) => navigateToLink(url, context.navigate, event)}
+                onClick={(event: any) =>
+                  navigateToLink(url, context.navigate, event)
+                }
                 href={url}
                 target='_blank'
-                rel='noopener noreferrer'>
+                rel='noopener noreferrer'
+              >
                 {record.label}
               </Anchor>
             );
           } else {
-            return (
-              <Text>{record.label}</Text>
-            )
+            return <Text>{record.label}</Text>;
           }
         }
       },
@@ -351,19 +382,23 @@ export function ForecastingTable({
           }
 
           // Access the model information
-          return context.modelInformation[record.model_type as ModelType]?.label?.() ?? record.model_type;
+          return (
+            context.modelInformation[
+              record.model_type as ModelType
+            ]?.label?.() ?? record.model_type
+          );
         }
       },
       {
         accessor: 'title',
         title: 'Description',
-        sortable: false,
+        sortable: false
       }
-    ]
+    ];
   }, [context.modelInformation, context.locale]);
 
   return (
-    <DataTable 
+    <DataTable
       columns={columns}
       records={records}
       sortStatus={sortStatus}
@@ -372,9 +407,8 @@ export function ForecastingTable({
       withTableBorder
       striped
     />
-  )
+  );
 }
-
 
 /**
  * Render a custom panel with the provided context.
@@ -382,22 +416,24 @@ export function ForecastingTable({
  * https://docs.inventree.org/en/stable/extend/plugins/ui/#plugin-context
  */
 function InvenTreeForecastingPanel({
-    context
+  context
 }: {
-    context: InvenTreePluginContext;
+  context: InvenTreePluginContext;
 }) {
+  const downloadData = useCallback(
+    (format: string) => {
+      let url = `${FORECASTING_URL}?part=${context.id}&export=${format}`;
 
-  const downloadData = useCallback((format: string) => {
-    let url = `${FORECASTING_URL}?part=${context.id}&export=${format}`;
+      if (context.host) {
+        url = `${context.host}${url}`;
+      } else {
+        url = `${window.location.origin}/${url}`;
+      }
 
-    if (context.host) {
-      url = `${context.host}${url}`;
-    } else {
-      url = `${window.location.origin}/${url}`;
-    }
-
-    window.open(url, '_blank');
-  }, [context.host, context.id]);
+      window.open(url, '_blank');
+    },
+    [context.host, context.id]
+  );
 
   const forecastingQuery = useQuery(
     {
@@ -406,100 +442,121 @@ function InvenTreeForecastingPanel({
       refetchOnMount: true,
       refetchOnWindowFocus: false,
       queryFn: async () => {
-        return context.api?.get(`/${FORECASTING_URL}`, {
-          params: {
-            part: context.id,
-          }
-        }).then((response: any) => {
-          return response.data;
-        }).catch(() => {
-          return {};
-        }) ?? {};
+        return (
+          context.api
+            ?.get(`/${FORECASTING_URL}`, {
+              params: {
+                part: context.id
+              }
+            })
+            .then((response: any) => {
+              return response.data;
+            })
+            .catch(() => {
+              return {};
+            }) ?? {}
+        );
       }
     },
     context.queryClient
   );
 
-  const hasForecastingData : boolean = useMemo(() => {
+  const hasForecastingData: boolean = useMemo(() => {
     return (forecastingQuery.data?.entries?.length ?? 0) > 0;
   }, [forecastingQuery.data]);
 
-    const primary : string = useMemo(() => {
-        return context.theme.primaryColor;
-    }, [context.theme.primaryColor]);
+  const primary: string = useMemo(() => {
+    return context.theme.primaryColor;
+  }, [context.theme.primaryColor]);
 
-    if (forecastingQuery.isLoading || forecastingQuery.isFetching) {
-      return <Skeleton animate height={300} />;
-    }
+  if (forecastingQuery.isLoading || forecastingQuery.isFetching) {
+    return <Skeleton animate height={300} />;
+  }
 
-    if (forecastingQuery.isError) {
-      return (
-        <Alert color="red" title="Error Loading Data" icon={<IconExclamationCircle />} >
-          <Text>{forecastingQuery.error.message}</Text>
-        </Alert>
-      );
-    }
-
-    if (!hasForecastingData) {
-      return (
-        <Alert color="yellow" title="No Data Available" icon={<IconInfoCircle />}>
-          <Text>
-            There is no forecasting data available for the selected part.
-          </Text>
-        </Alert>
-      )
-    }
-
+  if (forecastingQuery.isError) {
     return (
-        <>
-        <Stack gap="xs">
+      <Alert
+        color='red'
+        title='Error Loading Data'
+        icon={<IconExclamationCircle />}
+      >
+        <Text>{forecastingQuery.error.message}</Text>
+      </Alert>
+    );
+  }
+
+  if (!hasForecastingData) {
+    return (
+      <Alert color='yellow' title='No Data Available' icon={<IconInfoCircle />}>
+        <Text>
+          There is no forecasting data available for the selected part.
+        </Text>
+      </Alert>
+    );
+  }
+
+  return (
+    <>
+      <Stack gap='xs'>
         <Accordion multiple defaultValue={['chart', 'table']}>
-            <Accordion.Item value="chart">
-                <Accordion.Control>
-                    <Title order={4} c={primary} >Forecasting Chart</Title>
-                </Accordion.Control>
-                <Accordion.Panel>
-                    <ForecastingChart
-                      entries={forecastingQuery.data?.entries ?? []}
-                      initialStock={forecastingQuery.data?.in_stock ?? 0}
-                      minimumStock={forecastingQuery.data?.min_stock ?? 0}
-                      maximumStock={forecastingQuery.data?.max_stock ?? 0}
-                    />
-                </Accordion.Panel>
-            </Accordion.Item>
-            <Accordion.Item value="table">
-                <Accordion.Control>
-                    <Title order={4} c={primary} >Forecasting Data</Title>
-                </Accordion.Control>
-                <Accordion.Panel>
-                  <Stack gap='xs'>
-                  <ForecastingTable
-                    entries={forecastingQuery.data?.entries ?? []}
-                    context={context}
-                  />
-                  <Group gap='xs' justify='flex-end'>
-                 <Menu>
+          <Accordion.Item value='chart'>
+            <Accordion.Control>
+              <Title order={4} c={primary}>
+                Forecasting Chart
+              </Title>
+            </Accordion.Control>
+            <Accordion.Panel>
+              <ForecastingChart
+                entries={forecastingQuery.data?.entries ?? []}
+                initialStock={forecastingQuery.data?.in_stock ?? 0}
+                minimumStock={forecastingQuery.data?.min_stock ?? 0}
+                maximumStock={forecastingQuery.data?.max_stock ?? 0}
+              />
+            </Accordion.Panel>
+          </Accordion.Item>
+          <Accordion.Item value='table'>
+            <Accordion.Control>
+              <Title order={4} c={primary}>
+                Forecasting Data
+              </Title>
+            </Accordion.Control>
+            <Accordion.Panel>
+              <Stack gap='xs'>
+                <ForecastingTable
+                  entries={forecastingQuery.data?.entries ?? []}
+                  context={context}
+                />
+                <Group gap='xs' justify='flex-end'>
+                  <Menu>
                     <Menu.Target>
-                        <Button leftSection={<IconFileDownload />}>Export</Button>
+                      <Button leftSection={<IconFileDownload />}>Export</Button>
                     </Menu.Target>
                     <Menu.Dropdown>
-                        <Menu.Item onClick={() => downloadData('csv')}>CSV</Menu.Item>
-                        <Menu.Item onClick={() => downloadData('xls')} >XLS</Menu.Item>
-                        <Menu.Item onClick={() => downloadData('xlsx')}>XLSX</Menu.Item>
+                      <Menu.Item onClick={() => downloadData('csv')}>
+                        CSV
+                      </Menu.Item>
+                      <Menu.Item onClick={() => downloadData('xls')}>
+                        XLS
+                      </Menu.Item>
+                      <Menu.Item onClick={() => downloadData('xlsx')}>
+                        XLSX
+                      </Menu.Item>
                     </Menu.Dropdown>
-                </Menu>
+                  </Menu>
                 </Group>
-                  </Stack>
-                </Accordion.Panel>
-            </Accordion.Item>
+              </Stack>
+            </Accordion.Panel>
+          </Accordion.Item>
         </Accordion>
-        </Stack>
-        </>
-    );
+      </Stack>
+    </>
+  );
 }
 
 // This is the function which is called by InvenTree to render the actual panel component
-export function renderInvenTreeForecastingPanel(context: InvenTreePluginContext) {
-    checkPluginVersion(context);
-    return <InvenTreeForecastingPanel context={context} />;
+export function renderInvenTreeForecastingPanel(
+  context: InvenTreePluginContext
+) {
+  checkPluginVersion(context);
+  return <InvenTreeForecastingPanel context={context} />;
 }
