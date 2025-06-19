@@ -1,1 +1,1 @@
-recursive-include scheduling/static *.js *.css
+recursive-include inventree_forecasting/static *.js *.css

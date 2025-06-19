@@ -1,2 +1,3 @@
-# inventree-scheduling
-InvenTree plugin for invetory scheduling
+# inventree-stock-forecasting
+
+InvenTree plugin for forecasting future stock levels.

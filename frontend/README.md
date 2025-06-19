@@ -1,6 +1,6 @@
-# InvenTree Stock Scheduling - Frontend Code
+# InvenTree Stock Forecasting - Frontend Code
 
-This directory contains the frontend code for the InvenTree Stock Scheduling plugin.
+This directory contains the frontend code for the InvenTree Stock Forecasting plugin.
 
 ## Architecture
 

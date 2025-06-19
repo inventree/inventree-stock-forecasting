@@ -13,7 +13,7 @@ export default defineConfig({
         './src/ForecastingPanel.tsx',
       ],
       output: {
-        dir: '../scheduling/static',
+        dir: '../inventree_forecasting/static',
         entryFileNames: '[name].js',
         assetFileNames: 'assets/[name].[ext]',
       },
