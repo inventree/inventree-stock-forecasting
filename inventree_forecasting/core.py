@@ -1,5 +1,6 @@
 """Provide stock forecasting for InvenTree based on scheduled orders"""
 
+from django.contrib.auth.models import Group
 from django.utils.translation import gettext_lazy as _
 
 from plugin import InvenTreePlugin
@@ -28,29 +29,34 @@ class InvenTreeForecasting(
     MIN_VERSION = "0.18.0"  # Minimum InvenTree version required for this plugin
 
     # Plugin settings (from SettingsMixin)
-    # Ref: https://docs.inventree.org/en/stable/extend/plugins/settings/
     SETTINGS = {
-        # Define your plugin settings here...
-        "CUSTOM_VALUE": {
-            "name": "Custom Value",
-            "description": "A custom value",
-            "validator": int,
-            "default": 42,
+        "USER_GROUP": {
+            "name": _("Allowed Group"),
+            "description": _(
+                "The user group that is allowed to view stock forecasting"
+            ),
+            "model": "auth.group",
         }
     }
 
     # User interface elements (from UserInterfaceMixin)
-    # Ref: https://docs.inventree.org/en/stable/extend/plugins/ui/
 
     # Custom UI panels
     def get_ui_panels(self, request, context: dict, **kwargs):
         """Return a list of custom panels to be rendered in the InvenTree user interface."""
         panels = []
 
-        # TODO: Hide for users who are *not* in the correct group
+        allowed_user = True
+
+        # Hide for users who are *not* in the correct group
+        if user_group_id := self.get_setting("USER_GROUP", backup_value=None):
+            user_group = Group.objects.filter(id=user_group_id).first()
+
+            if user_group is not None and user_group not in request.user.groups.all():
+                allowed_user = False
 
         # Only display this panel for the 'part' target
-        if context.get("target_model") == "part":
+        if allowed_user and context.get("target_model") == "part":
             panels.append({
                 "key": "stock-forecasting",
                 "title": _("Stock Forecasting"),
