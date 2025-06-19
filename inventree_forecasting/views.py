@@ -35,12 +35,17 @@ class PartForecastingView(RetrieveAPI):
 
         data = cast(dict, request_serializer.validated_data)
 
+        # TODO: Add support for "variants" 
+
         part = data.get('part')
 
         # Here you would typically fetch the forecasting data for the part
         # For demonstration purposes, we return a mock response
         forecasting_data = {
             'part': part.pk,
+            'in_stock': part.get_stock_count(include_variants=False),
+            'min_stock': getattr(part, 'minimum_stock', 0),
+            'max_stock': getattr(part, 'maximum_stock', 0),
             'entries': self.get_entries(part),
         }
 

@@ -75,11 +75,30 @@ class PartForecastingSerializer(serializers.Serializer):
     class Meta:
         fields = [
             'part',
+            'in_stock',
+            'min_stock',
+            'max_stock',
+            'entries',
         ]
 
     part = serializers.PrimaryKeyRelatedField(
+        label=_('Part'),
         queryset=Part.objects.all(),
         many=False,
+    )
+
+    in_stock = serializers.FloatField(
+        label=_('In Stock'),
+    )
+
+    min_stock = serializers.FloatField(
+        label=_('Minimum Stock'),
+        help_text=_('Minimum stock level for the part'),
+    )
+
+    max_stock = serializers.FloatField(
+        label=_('Maximum Stock'),
+        help_text=_('Maximum stock level for the part'),
     )
 
     entries = PartForecastingEntrySerializer(
