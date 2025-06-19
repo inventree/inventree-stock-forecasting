@@ -1,5 +1,7 @@
 """API views for the InvenTree Forecasting plugin."""
 
+import functools
+
 from datetime import date
 from typing import cast, Optional
 
@@ -57,8 +59,24 @@ class PartForecastingView(RetrieveAPI):
             *self.generate_build_order_allocations(part),
         ]
 
+        def compare_entries(entry_1: dict, entry_2: dict) -> int:
+            """Comparison function for two forecasting entries, to assist in sorting.
+            
+            - Sort in increasing order of date
+            - Account for the fact that either date may be None
+            """
+            date_1 = entry_1['date']
+            date_2 = entry_2['date']
+
+            if date_1 is None:
+                return -1
+            elif date_2 is None:
+                return 1
+
+            return -1 if date_1 < date_2 else 1
+
         # Sort by date
-        ...
+        entries = sorted(entries, key=functools.cmp_to_key(compare_entries))
 
         return entries
 
@@ -258,18 +276,3 @@ class PartForecastingView(RetrieveAPI):
                     )
 
         return entries
-
-    def compare_entries(self, entry_1: dict, entry_2: dict) -> int:
-        """Comparison function for two forecasting entries, to assist in sorting.
-        
-        - Account for the fact that either date may be None
-        """
-        date_1 = entry_1['date']
-        date_2 = entry_2['date']
-
-        if date_1 is None:
-            return -1
-        elif date_2 is None:
-            return 1
-
-        return -1 if date_1 < date_2 else 1
