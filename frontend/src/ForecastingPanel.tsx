@@ -1,13 +1,13 @@
-import { Accordion, Alert, Stack, Title } from '@mantine/core';
-import { useEffect, useMemo } from 'react';
+import { Accordion, Alert, Skeleton, Stack, Text, Title } from '@mantine/core';
+import { useEffect, useMemo, useState } from 'react';
 
 import { DataTable } from 'mantine-datatable';
 
 // Import for type checking
 import { checkPluginVersion, type InvenTreePluginContext } from '@inventreedb/ui';
-import { ApiEndpoints, apiUrl, ModelType } from '@inventreedb/ui';
 import { LineChart } from '@mantine/charts';
 import { useQuery } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 
 const FORECASTING_URL : string = "plugin/stock-forecasting/forecast/";
 
@@ -44,7 +44,14 @@ export const chartData = [
   },
 ];
 
-export function ForecastingChart() {
+export function ForecastingChart({
+  data,
+}: {
+  data: any[];
+}) {
+
+  console.log("entries:", data);
+
   return (
     <LineChart
       h={300}
@@ -61,25 +68,48 @@ export function ForecastingChart() {
 }
 
 
-export function ForecastingTable() {
+export function ForecastingTable({
+  data
+}: {
+  data: any[];
+}) {
+
+  // Keep an internal copy of the records, so we can sort the table
+  const [ records, setRecords ] = useState<any[]>([]);
+
+  useEffect(() => {
+    setRecords(data);
+  }, [data]);
 
   const columns = useMemo(() => {
     return [
       {
         accessor: 'date',
         title: 'Date',
+        sortable: true,
+        render: (record: any) => {
+          if (!record.date) {
+            return <Text c='red' fs="italic">No date specified</Text>
+          } else {
+            const m = dayjs(record.date);
+            return m.format('YYYY-MM-DD');
+          }
+        }
       },
       {
         accessor: 'quantity',
         title: 'Quantity',
+        sortable: true,
       },
       {
         accessor: 'label',
         title: 'Reference',
+        sortable: true,
       },
       {
         accessor: 'description',
         title: 'Description',
+        sortable: true,
       }
     ]
   }, []);
@@ -87,7 +117,7 @@ export function ForecastingTable() {
   return (
     <DataTable 
       columns={columns}
-      records={[]}
+      records={records}
     />
   )
 }
@@ -104,44 +134,35 @@ function InvenTreeForecastingPanel({
     context: InvenTreePluginContext;
 }) {
 
-  useEffect(() => {
-    console.log("context:", context);
-  }, [context]);
-
-    const partId = useMemo(() => {
-        return context.model == ModelType.part ? context.id || null: null;
-    }, [context.model, context.id]);
-
-
     // Custom form to edit the selected part
-    const editPartForm = context.forms.edit({
-        url: apiUrl(ApiEndpoints.part_list, partId),
-        title: "Edit Part",
-        preFormContent: (
-            <Alert title="Custom Plugin Form" color="blue">
-                This is a custom form launched from within a plugin!
-            </Alert>
-        ),
-        fields: {
-            name: {},
-            description: {},
-            category: {},
-        },
-        successMessage: null,
-        onFormSuccess: () => {
-            // notifications.show({
-            //     title: 'Success',
-            //     message: 'Part updated successfully!',
-            //     color: 'green',
-            // });
-        }
-    });
+    // const editPartForm = context.forms.edit({
+    //     url: apiUrl(ApiEndpoints.part_list, partId),
+    //     title: "Edit Part",
+    //     preFormContent: (
+    //         <Alert title="Custom Plugin Form" color="blue">
+    //             This is a custom form launched from within a plugin!
+    //         </Alert>
+    //     ),
+    //     fields: {
+    //         name: {},
+    //         description: {},
+    //         category: {},
+    //     },
+    //     successMessage: null,
+    //     onFormSuccess: () => {
+    //         // notifications.show({
+    //         //     title: 'Success',
+    //         //     message: 'Part updated successfully!',
+    //         //     color: 'green',
+    //         // });
+    //     }
+    // });
 
   const forecastingQuery = useQuery(
     {
       enabled: !!context.id,
       queryKey: ['forecasting', context.id],
-      refetchOnMount: false,
+      refetchOnMount: true,
       refetchOnWindowFocus: false,
       queryFn: async () => {
         return context.api?.get(`/${FORECASTING_URL}`, {
@@ -151,45 +172,54 @@ function InvenTreeForecastingPanel({
         }).then((response: any) => {
           return response.data;
         }).catch(() => {
-          return [];
-        }) ?? [];
+          return {};
+        }) ?? {};
       }
     },
     context.queryClient
   );
 
-  useEffect(() => {
-    console.log("data:", forecastingQuery.data);
+  const hasForecastingData : boolean = useMemo(() => {
+    return (forecastingQuery.data?.entries?.length ?? 0) > 0;
   }, [forecastingQuery.data]);
 
-    // Custom callback function example
-    // const openForm = useCallback(() => {
-    //     editPartForm?.open();
-    // }, [editPartForm]);
-
-    // // Navigation functionality example
-    // const gotoDashboard = useCallback(() => {
-    //     context.navigate('/home');
-    // }, [context]);
 
     const primary : string = useMemo(() => {
         return context.theme.primaryColor;
     }, [context.theme.primaryColor]);
 
+    if (forecastingQuery.isLoading || forecastingQuery.isFetching) {
+      return <Skeleton animate height={300} />;
+    }
+
+    if (forecastingQuery.isError) {
+      return (
+        <Alert color="red" title="Error loading forecasting data">
+          <Text>{forecastingQuery.error.message}</Text>
+        </Alert>
+      );
+    }
+
+    if (!hasForecastingData) {
+      return (
+        <Alert color="yellow" title="No forecasting data available">
+          <Text>
+            There is no forecasting data available for the selected part.
+          </Text>
+        </Alert>
+      )
+    }
+
     return (
         <>
-        {editPartForm.modal}
         <Stack gap="xs">
-        {/* <Alert color='blue' icon={<IconCalendarTime />}>
-            <Text>Provides stock forecasting information basd on scheduled orders</Text>
-        </Alert> */}
         <Accordion multiple defaultValue={['chart', 'table']}>
             <Accordion.Item value="chart">
                 <Accordion.Control>
                     <Title order={4} c={primary} >Forecasting Chart</Title>
                 </Accordion.Control>
                 <Accordion.Panel>
-                    <ForecastingChart />
+                    <ForecastingChart data={forecastingQuery.data?.entries ?? []} />
                 </Accordion.Panel>
             </Accordion.Item>
             <Accordion.Item value="table">
@@ -197,7 +227,7 @@ function InvenTreeForecastingPanel({
                     <Title order={4} c={primary} >Forecasting Table</Title>
                 </Accordion.Control>
                 <Accordion.Panel>
-                  <ForecastingTable />
+                  <ForecastingTable data={forecastingQuery.data?.entries ?? []} />
                 </Accordion.Panel>
             </Accordion.Item>
         </Accordion>
