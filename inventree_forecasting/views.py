@@ -33,7 +33,7 @@ class PartForecastingView(RetrieveAPI):
         """Export the forecasting data to file for download."""
 
         # Construct the set of headers
-        headers = [
+        headers = list(map(str, [
             _('Date'),
             _('Label'),
             _('Title'),
@@ -41,16 +41,16 @@ class PartForecastingView(RetrieveAPI):
             _('Model ID'),
             _('Quantity'),
             _('Stock Level')
-        ]
+        ]))
 
         dataset = tablib.Dataset(headers=headers)
 
         # Track quantity over time
-        stock = part.get_stock_count(include_variants=False)
+        stock = float(part.get_stock_count(include_variants=False))
 
         for entry in entries:
             stock += entry.get('quantity', 0)
-            dataset.append([
+            row = list(map(str, [
                 entry.get('date', ''),
                 entry.get('label', ''),
                 entry.get('title', ''),
@@ -58,7 +58,8 @@ class PartForecastingView(RetrieveAPI):
                 entry.get('model_id', ''),
                 entry.get('quantity', 0),
                 stock
-            ])
+            ]))
+            dataset.append(row)
 
         data = dataset.export(export_format)
 

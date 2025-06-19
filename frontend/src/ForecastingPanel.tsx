@@ -1,5 +1,5 @@
-import { Accordion, Alert, Anchor, Divider, Paper, Skeleton, Stack, Text, Title } from '@mantine/core';
-import { useEffect, useMemo, useState } from 'react';
+import { Accordion, Alert, Anchor, Button, Divider, Group, Menu, Paper, Skeleton, Stack, Text, Title } from '@mantine/core';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { DataTable, DataTableSortStatus } from 'mantine-datatable';
 
@@ -8,7 +8,7 @@ import { checkPluginVersion, getDetailUrl, ModelType, navigateToLink, type Inven
 import { ChartTooltipProps, LineChart } from '@mantine/charts';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { IconExclamationCircle, IconInfoCircle } from '@tabler/icons-react';
+import { IconExclamationCircle, IconFileDownload, IconInfoCircle } from '@tabler/icons-react';
 
 const FORECASTING_URL : string = "plugin/stock-forecasting/forecast/";
 
@@ -387,6 +387,18 @@ function InvenTreeForecastingPanel({
     context: InvenTreePluginContext;
 }) {
 
+  const downloadData = useCallback((format: string) => {
+    let url = `${FORECASTING_URL}?part=${context.id}&export=${format}`;
+
+    if (context.host) {
+      url = `${context.host}${url}`;
+    } else {
+      url = `${window.location.origin}/${url}`;
+    }
+
+    window.open(url, '_blank');
+  }, [context.host, context.id]);
+
   const forecastingQuery = useQuery(
     {
       enabled: !!context.id,
@@ -460,10 +472,24 @@ function InvenTreeForecastingPanel({
                     <Title order={4} c={primary} >Forecasting Data</Title>
                 </Accordion.Control>
                 <Accordion.Panel>
+                  <Stack gap='xs'>
                   <ForecastingTable
                     entries={forecastingQuery.data?.entries ?? []}
                     context={context}
                   />
+                  <Group gap='xs' justify='flex-end'>
+                 <Menu>
+                    <Menu.Target>
+                        <Button leftSection={<IconFileDownload />}>Export</Button>
+                    </Menu.Target>
+                    <Menu.Dropdown>
+                        <Menu.Item onClick={() => downloadData('csv')}>CSV</Menu.Item>
+                        <Menu.Item onClick={() => downloadData('xls')} >XLS</Menu.Item>
+                        <Menu.Item onClick={() => downloadData('xlsx')}>XLSX</Menu.Item>
+                    </Menu.Dropdown>
+                </Menu>
+                </Group>
+                  </Stack>
                 </Accordion.Panel>
             </Accordion.Item>
         </Accordion>
