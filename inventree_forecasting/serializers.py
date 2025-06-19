@@ -38,36 +38,34 @@ class PartForecastingEntrySerializer(serializers.Serializer):
 
     date = serializers.DateField(
         label=_('Date'),
-        help_text=_('The date for the forecast entry')
+        help_text=_('The date for the forecast entry'),
+        allow_null=True,
     )
 
     quantity = serializers.IntegerField(
         label=_('Quantity'),
-        help_text=_('The forecasted quantity for this date')
+        help_text=_('The forecasted quantity for this date'),
     )
 
     title = serializers.CharField(
         label=_('Title'),
         help_text=_('Description for the forecast entry'),
-        allow_blank=True
+        allow_blank=True,
     )
 
     label = serializers.CharField(
         label=_('Label'),
-        help_text=_('Label for the forecast entry')
+        help_text=_('Label for the forecast entry'),
     )
 
-    model = serializers.CharField(
+    model_type = serializers.CharField(
         label=_('Model Type'),
         help_text=_('Type of model for the forecast entry'),
-        allow_blank=True
     )
 
-    model_type = serializers.IntegerField(
+    model_id = serializers.IntegerField(
         label=_('Model Type ID'),
         help_text=_('ID of the model type for the forecast entry'),
-        allow_null=True,
-        required=False
     )
 
 
