@@ -1,26 +1,25 @@
 """API views for the InvenTree Forecasting plugin."""
 
 import functools
-import tablib
-
 from datetime import date
-from typing import cast, Optional
+from typing import Optional, cast
 
 from django.db.models import Model
 from django.utils.translation import gettext_lazy as _
 
+import tablib
 from rest_framework import permissions
 from rest_framework.response import Response
 
-from InvenTree.helpers import DownloadFile
-from InvenTree.mixins import RetrieveAPI
 import build.models as build_models
 import build.status_codes as build_status
 import order.models as order_models
 import order.status_codes as order_status
 import part.models as part_models
+from InvenTree.helpers import DownloadFile
+from InvenTree.mixins import RetrieveAPI
 
-from .serializers import PartForecastingSerializer, PartForecastingRequestSerializer
+from .serializers import PartForecastingRequestSerializer, PartForecastingSerializer
 
 
 class PartForecastingView(RetrieveAPI):
@@ -31,7 +30,6 @@ class PartForecastingView(RetrieveAPI):
 
     def export_data(self, part: part_models.Part, entries: list, export_format: str = 'csv'):
         """Export the forecasting data to file for download."""
-
         # Construct the set of headers
         headers = list(map(str, [
             _('Date'),
@@ -70,13 +68,12 @@ class PartForecastingView(RetrieveAPI):
 
     def get(self, request, *args, **kwargs):
         """Handle GET request to retrieve forecasting data for a specific part."""
-
         request_serializer = PartForecastingRequestSerializer(data=request.query_params)
         request_serializer.is_valid(raise_exception=True)
 
         data = cast(dict, request_serializer.validated_data)
 
-        # TODO: Add support for "variants" 
+        # TODO: Add support for "variants"
 
         part = data.get('part')
 
@@ -92,7 +89,7 @@ class PartForecastingView(RetrieveAPI):
 
         response_serializer = self.serializer_class(data=forecasting_data)
         response_serializer.is_valid(raise_exception=True)
-        
+
         if export_format := data.get('export'):
             # If an export format is specified, export the data
             return self.export_data(part, response_serializer.data['entries'], export_format)
@@ -101,7 +98,6 @@ class PartForecastingView(RetrieveAPI):
 
     def get_entries(self, part: part_models.Part) -> list:
         """Fetch forecasting entries for the given part."""
-
         entries = [
             *self.generate_purchase_order_entries(part),
             *self.generate_sales_order_entries(part),
@@ -144,7 +140,6 @@ class PartForecastingView(RetrieveAPI):
             date (date): The date for the forecast entry.
             title (str): Optional title for the entry.
         """
-
         return {
             'date': date,
             'quantity': float(quantity),
@@ -153,7 +148,7 @@ class PartForecastingView(RetrieveAPI):
             'model_type': instance.__class__.__name__.lower(),
             'model_id': instance.pk,
         }
-    
+
     def generate_purchase_order_entries(self, part: part_models.Part) -> list:
         """Generate forecasting entries for purchase orders related to the part.
         
@@ -161,7 +156,6 @@ class PartForecastingView(RetrieveAPI):
         - These orders will increase the forecasted quantity for the part.
         - We do not include purchase orders which are already completed or cancelled.
         """
-        
         entries = []
 
         po_lines = order_models.PurchaseOrderLineItem.objects.filter(
@@ -187,10 +181,9 @@ class PartForecastingView(RetrieveAPI):
                 )
 
         return entries
-    
+
     def generate_sales_order_entries(self, part: part_models.Part) -> list:
         """Generate forecasting entries for sales orders related to the part."""
-        
         entries = []
 
         so_lines = order_models.SalesOrderLineItem.objects.filter(
@@ -217,7 +210,6 @@ class PartForecastingView(RetrieveAPI):
 
     def generate_build_order_entries(self, part: part_models.Part) -> list:
         """Generate forecasting entries for build orders related to the part."""
-        
         entries = []
 
         build_orders = build_models.Build.objects.filter(
@@ -258,7 +250,6 @@ class PartForecastingView(RetrieveAPI):
         However, it has the added benefit of side-stepping the various BOM substitution options,
         and just looking at what stock items the user has actually allocated against the Build.
         """
-
         entries = []
 
         bom_items = part_models.BomItem.objects.filter(part.get_used_in_bom_item_filter())
@@ -277,12 +268,12 @@ class PartForecastingView(RetrieveAPI):
                 builds = build_models.Build.objects.filter(
                     status__in=build_status.BuildStatusGroups.ACTIVE_CODES, part=bom_item.part
                 )
-            
+
             for build in builds:
                 # Ensure we don't double-count the same build
                 if build.pk in observed_builds:
                     continue
-            
+
                 observed_builds.add(build.pk)
 
                 if bom_item.sub_part.trackable:
@@ -291,7 +282,7 @@ class PartForecastingView(RetrieveAPI):
                 else:
                     # Non-trackable parts are allocated against the build itself
                     required_quantity = build.quantity * bom_item.quantity
-                
+
                 # Grab all allocations against the specified BomItem
                 allocations = build_models.BuildItem.objects.filter(
                     build_line__bom_item=bom_item,

@@ -1,15 +1,14 @@
 """Provide stock forecasting for InvenTree based on scheduled orders"""
 
-from plugin import InvenTreePlugin
-
 from django.utils.translation import gettext_lazy as _
+
+from plugin import InvenTreePlugin
 from plugin.mixins import SettingsMixin, UrlsMixin, UserInterfaceMixin
 
 from . import PLUGIN_VERSION
 
 
 class InvenTreeForecasting(SettingsMixin, UrlsMixin, UserInterfaceMixin, InvenTreePlugin):
-
     """InvenTreeForecasting - custom InvenTree plugin."""
 
     # Plugin metadata
@@ -37,14 +36,13 @@ class InvenTreeForecasting(SettingsMixin, UrlsMixin, UserInterfaceMixin, InvenTr
             'default': 42,
         }
     }
-    
+
     # User interface elements (from UserInterfaceMixin)
     # Ref: https://docs.inventree.org/en/stable/extend/plugins/ui/
-    
+
     # Custom UI panels
     def get_ui_panels(self, request, context: dict, **kwargs):
         """Return a list of custom panels to be rendered in the InvenTree user interface."""
-
         panels = []
 
         # TODO: Hide for users who are *not* in the correct group
@@ -63,15 +61,15 @@ class InvenTreeForecasting(SettingsMixin, UrlsMixin, UserInterfaceMixin, InvenTr
                     'foo': 'bar'
                 }
             })
-        
+
         return panels
-    
+
     def setup_urls(self):
         """Returns the URLs defined by this plugin."""
-
         from django.urls import path
+
         from .views import PartForecastingView
 
         return [
             path('forecast/', PartForecastingView.as_view(), name='part-forecasting'),
-        ]    
+        ]
