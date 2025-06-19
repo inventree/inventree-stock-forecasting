@@ -1,7 +1,7 @@
 import { Accordion, Alert, Anchor, Divider, Paper, Skeleton, Stack, Text, Title } from '@mantine/core';
 import { useEffect, useMemo, useState } from 'react';
 
-import { DataTable } from 'mantine-datatable';
+import { DataTable, DataTableSortStatus } from 'mantine-datatable';
 
 // Import for type checking
 import { checkPluginVersion, getDetailUrl, ModelType, navigateToLink, type InvenTreePluginContext } from '@inventreedb/ui';
@@ -32,16 +32,12 @@ function ChartTooltip({ label, payload }: Readonly<ChartTooltipProps>) {
       <Text key='scheduled' c={quantity?.color} fz='sm'>
         Forecast : {quantity?.value}
       </Text>
-      {maximum != quantity && (
-        <Text key='maximum' c={maximum?.color} fz='sm'>
-          Maximum : {maximum?.value}
-        </Text>
-      )}
-      {minimum != quantity && (
-        <Text key='minimum' c={minimum?.color} fz='sm'>
-          Minimum : {minimum?.value}
-        </Text>
-      )}
+      <Text key='maximum' c={maximum?.color} fz='sm'>
+        Maximum : {maximum?.value}
+      </Text>
+      <Text key='minimum' c={minimum?.color} fz='sm'>
+        Minimum : {minimum?.value}
+      </Text>
     </Paper>
   );
 }
@@ -163,11 +159,6 @@ export function ForecastingChart({
 
     const series: any[] = [
       {
-        name: 'quantity',
-        label: 'Quantity',
-        color: 'blue.6',
-      },
-      {
         name: 'minimum',
         label: 'Minimum',
         color: 'yellow.6',
@@ -176,7 +167,12 @@ export function ForecastingChart({
         name: 'maximum',
         label: 'Maximum',
         color: 'teal.6',
-      }
+      },
+      {
+        name: 'quantity',
+        label: 'Quantity',
+        color: 'blue.6',
+      },
     ];
 
     if (minimumStock > 0) {
@@ -235,14 +231,44 @@ export function ForecastingTable({
   context: InvenTreePluginContext;
 }) {
 
+  const [sortStatus, setSortStatus] = useState<DataTableSortStatus<any>>({
+    columnAccessor: 'date',
+    direction: 'asc',
+  });
+
   // Keep an internal copy of the records, so we can sort the table
   const [ records, setRecords ] = useState<any[]>([]);
 
   useEffect(() => {
-    setRecords(entries);
-  }, [entries]);
+    const sortedEntries = [...entries];
 
-  // TODO: Add "total quantity" column
+    if (sortStatus.columnAccessor) {
+      sortedEntries.sort((a, b) => {
+        let aValue = a[sortStatus.columnAccessor];
+        let bValue = b[sortStatus.columnAccessor];
+
+        // Special sorting for these columns
+        if (sortStatus.columnAccessor === 'date') {
+          aValue = aValue ? new Date(aValue).valueOf() : 0;
+          bValue = bValue ? new Date(bValue).valueOf() : 0;
+        } else if (sortStatus.columnAccessor === 'quantity') {
+          aValue = parseFloat(aValue) || 0;
+          bValue = parseFloat(bValue) || 0;
+        }
+
+        if (aValue < bValue) {
+          return sortStatus.direction === 'desc' ? 1 : -1;
+        } else if (aValue > bValue) {
+          return sortStatus.direction === 'desc' ? -1 : 1;
+        } else {
+          return 0;
+        }
+      });
+    }
+
+    setRecords(sortedEntries);
+
+  }, [entries, sortStatus]);
 
   const columns = useMemo(() => {
     return [
@@ -319,7 +345,7 @@ export function ForecastingTable({
       {
         accessor: 'title',
         title: 'Description',
-        sortable: true,
+        sortable: false,
       }
     ]
   }, [context.modelInformation, context.locale]);
@@ -328,6 +354,11 @@ export function ForecastingTable({
     <DataTable 
       columns={columns}
       records={records}
+      sortStatus={sortStatus}
+      onSortStatusChange={setSortStatus}
+      withColumnBorders
+      withTableBorder
+      striped
     />
   )
 }
