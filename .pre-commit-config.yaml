@@ -16,4 +16,4 @@ repos:
     hooks:
     -   id: biome-check
         additional_dependencies: ["@biomejs/biome@2.0.0"]
-        files: ^/frontend/src.*\.(js|ts|tsx)$
+        files: ^frontend/src.*\.(js|ts|tsx)$
