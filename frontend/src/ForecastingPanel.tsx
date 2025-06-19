@@ -109,9 +109,7 @@ export function ForecastingChart({
         delta: 0,
         quantity: stock,
         minimum: minStock,
-        maximum: maxStock,
-        lowStockThreshold: minimumStock,
-        highStockThreshold: maximumStock
+        maximum: maxStock
       }
     ];
 
@@ -191,23 +189,29 @@ export function ForecastingChart({
       }
     ];
 
-    if (minimumStock > 0) {
-      series.push({
-        name: 'lowStockThreshold',
-        label: 'Low Stock Threshold',
-        color: 'red.6'
-      });
-    }
-
-    if (maximumStock > 0) {
-      series.push({
-        name: 'highStockThreshold',
-        label: 'High Stock Threshold',
-        color: 'red.6'
-      });
-    }
-
     return series;
+  }, [minimumStock, maximumStock]);
+
+  const referenceLines: any[] = useMemo(() => {
+    const lines: any[] = [];
+
+    if ((minimumStock ?? 0) > 0) {
+      lines.push({
+        y: minimumStock,
+        label: 'Minimum Stock',
+        color: 'red.6'
+      });
+    }
+
+    if ((maximumStock ?? 0) > 0) {
+      lines.push({
+        y: maximumStock,
+        label: 'Maximum Stock',
+        color: 'red.3'
+      });
+    }
+
+    return lines;
   }, [minimumStock, maximumStock]);
 
   // No useful information to display
@@ -250,6 +254,7 @@ export function ForecastingChart({
         }
       }}
       series={chartSeries}
+      referenceLines={referenceLines}
     />
   );
 }
