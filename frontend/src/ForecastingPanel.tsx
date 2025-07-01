@@ -195,13 +195,11 @@ export function ForecastingChart({
   const referenceLines: any[] = useMemo(() => {
     const lines: any[] = [];
 
-    if ((minimumStock ?? 0) > 0) {
-      lines.push({
-        y: minimumStock,
-        label: 'Minimum Stock',
-        color: 'red.6'
-      });
-    }
+    lines.push({
+      y: minimumStock ?? 0,
+      label: 'Minimum Stock',
+      color: 'red.6'
+    });
 
     if ((maximumStock ?? 0) > 0) {
       lines.push({
