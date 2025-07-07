@@ -33,6 +33,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const FORECASTING_URL: string = 'plugin/stock-forecasting/forecast/';
 
+function formatDecimal(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return '-';
+  }
+
+  const formatter = new Intl.NumberFormat(navigator.language, {
+    style: 'decimal',
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0
+  });
+
+  return formatter.format(value);
+}
+
 function ChartTooltip({ label, payload }: Readonly<ChartTooltipProps>) {
   if (!payload) {
     return null;
@@ -50,15 +64,21 @@ function ChartTooltip({ label, payload }: Readonly<ChartTooltipProps>) {
     <Paper px='md' py='sm' withBorder shadow='md' radius='md'>
       <Text key='title'>{label}</Text>
       <Divider />
-      <Text key='scheduled' c={quantity?.color} fz='sm'>
-        Forecast : {quantity?.value}
-      </Text>
-      <Text key='maximum' c={maximum?.color} fz='sm'>
-        Maximum : {maximum?.value}
-      </Text>
-      <Text key='minimum' c={minimum?.color} fz='sm'>
-        Minimum : {minimum?.value}
-      </Text>
+      {quantity?.value && (
+        <Text key='scheduled' c={quantity?.color} fz='sm'>
+          Forecast : {formatDecimal(quantity?.value)}
+        </Text>
+      )}
+      {maximum?.value && (
+        <Text key='maximum' c={maximum?.color} fz='sm'>
+          Maximum : {formatDecimal(maximum?.value)}
+        </Text>
+      )}
+      {minimum?.value && (
+        <Text key='minimum' c={minimum?.color} fz='sm'>
+          Minimum : {formatDecimal(minimum?.value)}
+        </Text>
+      )}
     </Paper>
   );
 }
