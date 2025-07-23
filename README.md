@@ -1,3 +1,8 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI](https://img.shields.io/pypi/v/inventree-order-history)](https://pypi.org/project/inventree-stock-forecasting/)
+![PEP](https://github.com/inventree/inventree-stock-forecasting/actions/workflows/pep.yaml/badge.svg)
+
+
 # InvenTreeForecasting
 
 This [InvenTree](https://inventree.org) plugin provide stock forecasting based on scheduled orders.
