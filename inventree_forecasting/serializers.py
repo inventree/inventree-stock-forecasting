@@ -20,6 +20,11 @@ class PartForecastingRequestSerializer(serializers.Serializer):
         help_text=_("The part for which to retrieve forecasting data"),
     )
 
+    include_variants = serializers.BooleanField(
+        required=False,
+        default=False
+    )
+
     export = serializers.ChoiceField(
         choices=[(choice, choice) for choice in ["csv", "tsv", "xls", "xlsx"]],
         required=False,
