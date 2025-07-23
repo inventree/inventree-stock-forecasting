@@ -4,7 +4,8 @@ import {
   getDetailUrl,
   type InvenTreePluginContext,
   type ModelType,
-  navigateToLink
+  navigateToLink,
+  formatDecimal
 } from '@inventreedb/ui';
 import { type ChartTooltipProps, LineChart } from '@mantine/charts';
 import {
@@ -34,19 +35,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const FORECASTING_URL: string = 'plugin/stock-forecasting/forecast/';
 
-function formatDecimal(value: number | null | undefined) {
-  if (value === null || value === undefined) {
-    return '-';
-  }
-
-  const formatter = new Intl.NumberFormat(navigator.language, {
-    style: 'decimal',
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 0
-  });
-
-  return formatter.format(value);
-}
 
 function ChartTooltip({ label, payload }: Readonly<ChartTooltipProps>) {
   if (!payload) {
