@@ -1,11 +1,11 @@
 // Import for type checking
 import {
   checkPluginVersion,
+  formatDecimal,
   getDetailUrl,
   type InvenTreePluginContext,
   type ModelType,
-  navigateToLink,
-  formatDecimal
+  navigateToLink
 } from '@inventreedb/ui';
 import { type ChartTooltipProps, LineChart } from '@mantine/charts';
 import {
@@ -34,7 +34,6 @@ import { DataTable, type DataTableSortStatus } from 'mantine-datatable';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const FORECASTING_URL: string = 'plugin/stock-forecasting/forecast/';
-
 
 function ChartTooltip({ label, payload }: Readonly<ChartTooltipProps>) {
   if (!payload) {
@@ -432,13 +431,11 @@ function InvenTreeForecastingPanel({
 }: {
   context: InvenTreePluginContext;
 }) {
-
-  const [ includeVariants, setIncludeVariants ] = useState<boolean>(false);
+  const [includeVariants, setIncludeVariants] = useState<boolean>(false);
 
   // Callback function to download the forecasting data
   const downloadData = useCallback(
     (format: string) => {
-
       let url = `${FORECASTING_URL}?part=${context.id}&include_variants=${includeVariants}&export=${format}`;
 
       if (context.host) {
@@ -448,11 +445,9 @@ function InvenTreeForecastingPanel({
       }
 
       window.open(url, '_blank');
-  },
-  [
-    context.host, context.id,
-    includeVariants
-  ]);
+    },
+    [context.host, context.id, includeVariants]
+  );
 
   const forecastingQuery = useQuery(
     {
@@ -482,7 +477,6 @@ function InvenTreeForecastingPanel({
   );
 
   const hasForecastingData: boolean = useMemo(() => {
-
     if (forecastingQuery.isFetching || forecastingQuery.isLoading) {
       return false;
     }
@@ -504,7 +498,7 @@ function InvenTreeForecastingPanel({
         <Paper withBorder p='sm' m='sm'>
           <Group gap='xs' justify='space-between' align='flex-end'>
             <Select
-              label={"Include Variant Parts"}
+              label={'Include Variant Parts'}
               value={includeVariants ? 'true' : 'false'}
               onChange={(value) => {
                 setIncludeVariants(value === 'true');
@@ -521,75 +515,79 @@ function InvenTreeForecastingPanel({
               ]}
             />
             <Menu>
-            <Menu.Target>
-              <Button leftSection={<IconFileDownload />}>Export</Button>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item key='csv' onClick={() => downloadData('csv')}>
-                CSV
-              </Menu.Item>
-              <Menu.Item key='xls' onClick={() => downloadData('xls')}>
-                XLS
-              </Menu.Item>
-              <Menu.Item key='xlsx' onClick={() => downloadData('xlsx')}>
-                XLSX
-              </Menu.Item>
-            </Menu.Dropdown>
+              <Menu.Target>
+                <Button leftSection={<IconFileDownload />}>Export</Button>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item key='csv' onClick={() => downloadData('csv')}>
+                  CSV
+                </Menu.Item>
+                <Menu.Item key='xls' onClick={() => downloadData('xls')}>
+                  XLS
+                </Menu.Item>
+                <Menu.Item key='xlsx' onClick={() => downloadData('xlsx')}>
+                  XLSX
+                </Menu.Item>
+              </Menu.Dropdown>
             </Menu>
           </Group>
         </Paper>
-      {(forecastingQuery.isLoading || forecastingQuery.isFetching) && (
-        <Skeleton animate height={300} />
-      )}
-      {forecastingQuery.isError && (
+        {(forecastingQuery.isLoading || forecastingQuery.isFetching) && (
+          <Skeleton animate height={300} />
+        )}
+        {forecastingQuery.isError && (
           <Alert
-          color='red'
-          title='Error Loading Data'
-          icon={<IconExclamationCircle />}
-        >
-          <Text>{forecastingQuery.error.message}</Text>
-        </Alert>
-      )}
-      {hasForecastingData ? (
-        <Accordion multiple defaultValue={['chart', 'table']}>
-          <Accordion.Item value='chart'>
-            <Accordion.Control>
-              <Title order={4} c={primary}>
-                Forecasting Chart
-              </Title>
-            </Accordion.Control>
-            <Accordion.Panel>
-              <ForecastingChart
-                entries={forecastingQuery.data?.entries ?? []}
-                initialStock={forecastingQuery.data?.in_stock ?? 0}
-                minimumStock={forecastingQuery.data?.min_stock ?? 0}
-                maximumStock={forecastingQuery.data?.max_stock ?? 0}
-              />
-            </Accordion.Panel>
-          </Accordion.Item>
-          <Accordion.Item value='table'>
-            <Accordion.Control>
-              <Title order={4} c={primary}>
-                Forecasting Data
-              </Title>
-            </Accordion.Control>
-            <Accordion.Panel>
-              <Stack gap='xs'>
-                <ForecastingTable
+            color='red'
+            title='Error Loading Data'
+            icon={<IconExclamationCircle />}
+          >
+            <Text>{forecastingQuery.error.message}</Text>
+          </Alert>
+        )}
+        {hasForecastingData ? (
+          <Accordion multiple defaultValue={['chart', 'table']}>
+            <Accordion.Item value='chart'>
+              <Accordion.Control>
+                <Title order={4} c={primary}>
+                  Forecasting Chart
+                </Title>
+              </Accordion.Control>
+              <Accordion.Panel>
+                <ForecastingChart
                   entries={forecastingQuery.data?.entries ?? []}
-                  context={context}
+                  initialStock={forecastingQuery.data?.in_stock ?? 0}
+                  minimumStock={forecastingQuery.data?.min_stock ?? 0}
+                  maximumStock={forecastingQuery.data?.max_stock ?? 0}
                 />
-              </Stack>
-            </Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
-       ) : ( 
-        <Alert color='yellow' title='No Data Available' icon={<IconInfoCircle />}>
-          <Text>
-            There is no forecasting data available for the selected part.
-          </Text>
-        </Alert>
-      )}
+              </Accordion.Panel>
+            </Accordion.Item>
+            <Accordion.Item value='table'>
+              <Accordion.Control>
+                <Title order={4} c={primary}>
+                  Forecasting Data
+                </Title>
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Stack gap='xs'>
+                  <ForecastingTable
+                    entries={forecastingQuery.data?.entries ?? []}
+                    context={context}
+                  />
+                </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
+        ) : (
+          <Alert
+            color='yellow'
+            title='No Data Available'
+            icon={<IconInfoCircle />}
+          >
+            <Text>
+              There is no forecasting data available for the selected part.
+            </Text>
+          </Alert>
+        )}
       </Stack>
     </>
   );
