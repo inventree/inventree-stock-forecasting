@@ -109,7 +109,7 @@ class PartForecastingView(RetrieveAPI):
             "in_stock": part.get_stock_count(include_variants=include_variants),
             "min_stock": getattr(part, "minimum_stock", 0),
             "max_stock": getattr(part, "maximum_stock", 0),
-            "entries": self.get_entries(part),
+            "entries": self.get_entries(part, include_variants),
         }
 
         response_serializer = self.serializer_class(data=forecasting_data)
@@ -197,7 +197,7 @@ class PartForecastingView(RetrieveAPI):
             po_lines = po_lines.filter(part__part__in=variants)
         else:
             # Filter lines to only include the exact part
-            po_lines = po_lines.filter(part=part)
+            po_lines = po_lines.filter(part__part=part)
 
         for line in po_lines:
             # Determine the expected delivery date and quantity
@@ -315,9 +315,7 @@ class PartForecastingView(RetrieveAPI):
 
         for p in parts:
             # For each part, find all BOM items which reference it
-            bom_items = part_models.BomItem.objects.prefetch_related(
-                'substitute_items'
-            ).filter(
+            bom_items = part_models.BomItem.objects.filter(
                 p.get_used_in_bom_item_filter()
             )
 
