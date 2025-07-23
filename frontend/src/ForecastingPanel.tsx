@@ -444,22 +444,27 @@ function InvenTreeForecastingPanel({
 }: {
   context: InvenTreePluginContext;
 }) {
+
+  const [ includeVariants, setIncludeVariants ] = useState<boolean>(false);
+
+  // Callback function to download the forecasting data
   const downloadData = useCallback(
     (format: string) => {
-      let url = `${FORECASTING_URL}?part=${context.id}&export=${format}`;
+
+      let url = `${FORECASTING_URL}?part=${context.id}&include_variants=${includeVariants}&export=${format}`;
 
       if (context.host) {
-        url = `${context.host}${url}`;
+        url = `${context.host}/${url}`;
       } else {
         url = `${window.location.origin}/${url}`;
       }
 
       window.open(url, '_blank');
-    },
-    [context.host, context.id]
-  );
-
-  const [ includeVariants, setIncludeVariants ] = useState<boolean>(false);
+  },
+  [
+    context.host, context.id,
+    includeVariants
+  ]);
 
   const forecastingQuery = useQuery(
     {
@@ -509,7 +514,7 @@ function InvenTreeForecastingPanel({
     <>
       <Stack gap='xs'>
         <Paper withBorder p='sm' m='sm'>
-          <Group gap='xs' justify='space-apart'>
+          <Group gap='xs' justify='space-between' align='flex-end'>
             <Select
               label={"Include Variant Parts"}
               value={includeVariants ? 'true' : 'false'}
@@ -527,6 +532,22 @@ function InvenTreeForecastingPanel({
                 }
               ]}
             />
+            <Menu>
+            <Menu.Target>
+              <Button leftSection={<IconFileDownload />}>Export</Button>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item key='csv' onClick={() => downloadData('csv')}>
+                CSV
+              </Menu.Item>
+              <Menu.Item key='xls' onClick={() => downloadData('xls')}>
+                XLS
+              </Menu.Item>
+              <Menu.Item key='xlsx' onClick={() => downloadData('xlsx')}>
+                XLSX
+              </Menu.Item>
+            </Menu.Dropdown>
+            </Menu>
           </Group>
         </Paper>
       {(forecastingQuery.isLoading || forecastingQuery.isFetching) && (
@@ -570,24 +591,6 @@ function InvenTreeForecastingPanel({
                   entries={forecastingQuery.data?.entries ?? []}
                   context={context}
                 />
-                <Group gap='xs' justify='flex-end'>
-                  <Menu>
-                    <Menu.Target>
-                      <Button leftSection={<IconFileDownload />}>Export</Button>
-                    </Menu.Target>
-                    <Menu.Dropdown>
-                      <Menu.Item onClick={() => downloadData('csv')}>
-                        CSV
-                      </Menu.Item>
-                      <Menu.Item onClick={() => downloadData('xls')}>
-                        XLS
-                      </Menu.Item>
-                      <Menu.Item onClick={() => downloadData('xlsx')}>
-                        XLSX
-                      </Menu.Item>
-                    </Menu.Dropdown>
-                  </Menu>
-                </Group>
               </Stack>
             </Accordion.Panel>
           </Accordion.Item>
