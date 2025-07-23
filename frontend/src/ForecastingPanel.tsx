@@ -16,6 +16,7 @@ import {
   Group,
   Menu,
   Paper,
+  Select,
   Skeleton,
   Stack,
   Text,
@@ -458,10 +459,12 @@ function InvenTreeForecastingPanel({
     [context.host, context.id]
   );
 
+  const [ includeVariants, setIncludeVariants ] = useState<boolean>(false);
+
   const forecastingQuery = useQuery(
     {
       enabled: !!context.id,
-      queryKey: ['forecasting', context.id],
+      queryKey: ['forecasting', context.id, includeVariants],
       refetchOnMount: true,
       refetchOnWindowFocus: false,
       queryFn: async () => {
@@ -469,7 +472,8 @@ function InvenTreeForecastingPanel({
           context.api
             ?.get(`/${FORECASTING_URL}`, {
               params: {
-                part: context.id
+                part: context.id,
+                include_variants: includeVariants
               }
             })
             .then((response: any) => {
@@ -485,42 +489,59 @@ function InvenTreeForecastingPanel({
   );
 
   const hasForecastingData: boolean = useMemo(() => {
+
+    if (forecastingQuery.isFetching || forecastingQuery.isLoading) {
+      return false;
+    }
+
     return (forecastingQuery.data?.entries?.length ?? 0) > 0;
-  }, [forecastingQuery.data]);
+  }, [
+    forecastingQuery.isFetching,
+    forecastingQuery.isLoading,
+    forecastingQuery.data
+  ]);
 
   const primary: string = useMemo(() => {
     return context.theme.primaryColor;
   }, [context.theme.primaryColor]);
 
-  if (forecastingQuery.isLoading || forecastingQuery.isFetching) {
-    return <Skeleton animate height={300} />;
-  }
-
-  if (forecastingQuery.isError) {
-    return (
-      <Alert
-        color='red'
-        title='Error Loading Data'
-        icon={<IconExclamationCircle />}
-      >
-        <Text>{forecastingQuery.error.message}</Text>
-      </Alert>
-    );
-  }
-
-  if (!hasForecastingData) {
-    return (
-      <Alert color='yellow' title='No Data Available' icon={<IconInfoCircle />}>
-        <Text>
-          There is no forecasting data available for the selected part.
-        </Text>
-      </Alert>
-    );
-  }
-
   return (
     <>
       <Stack gap='xs'>
+        <Paper withBorder p='sm' m='sm'>
+          <Group gap='xs' justify='space-apart'>
+            <Select
+              label={"Include Variant Parts"}
+              value={includeVariants ? 'true' : 'false'}
+              onChange={(value) => {
+                setIncludeVariants(value === 'true');
+              }}
+              data={[
+                {
+                  value: 'false',
+                  label: 'No'
+                },
+                {
+                  value: 'true',
+                  label: 'Yes'
+                }
+              ]}
+            />
+          </Group>
+        </Paper>
+      {(forecastingQuery.isLoading || forecastingQuery.isFetching) && (
+        <Skeleton animate height={300} />
+      )}
+      {forecastingQuery.isError && (
+          <Alert
+          color='red'
+          title='Error Loading Data'
+          icon={<IconExclamationCircle />}
+        >
+          <Text>{forecastingQuery.error.message}</Text>
+        </Alert>
+      )}
+      {hasForecastingData ? (
         <Accordion multiple defaultValue={['chart', 'table']}>
           <Accordion.Item value='chart'>
             <Accordion.Control>
@@ -571,6 +592,13 @@ function InvenTreeForecastingPanel({
             </Accordion.Panel>
           </Accordion.Item>
         </Accordion>
+       ) : ( 
+        <Alert color='yellow' title='No Data Available' icon={<IconInfoCircle />}>
+          <Text>
+            There is no forecasting data available for the selected part.
+          </Text>
+        </Alert>
+      )}
       </Stack>
     </>
   );
