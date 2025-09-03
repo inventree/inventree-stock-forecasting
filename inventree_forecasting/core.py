@@ -44,6 +44,9 @@ class InvenTreeForecasting(
     # Custom UI panels
     def get_ui_panels(self, request, context: dict, **kwargs):
         """Return a list of custom panels to be rendered in the InvenTree user interface."""
+
+        from part.models import Part
+
         panels = []
 
         allowed_user = True
@@ -57,20 +60,28 @@ class InvenTreeForecasting(
 
         # Only display this panel for the 'part' target
         if allowed_user and context.get("target_model") == "part":
-            panels.append({
-                "key": "stock-forecasting",
-                "title": _("Stock Forecasting"),
-                "description": _("Stock level forecasting"),
-                "icon": "ti:calendar-time:outline",
-                "source": self.plugin_static_file(
-                    "ForecastingPanel.js:renderInvenTreeForecastingPanel"
-                ),
-                "context": {
-                    # Provide additional context data to the panel
-                    "settings": self.get_settings_dict(),
-                    "foo": "bar",
-                },
-            })
+
+            if part_id := context.get("target_id", None):
+                try:
+                    part = Part.objects.filter(id=part_id).first()
+                except Exception:
+                    part = None
+                
+                # A valid (non-virtual) part is required
+                if part and not part.virtual:
+                    panels.append({
+                        "key": "stock-forecasting",
+                        "title": _("Stock Forecasting"),
+                        "description": _("Stock level forecasting"),
+                        "icon": "ti:calendar-time:outline",
+                        "source": self.plugin_static_file(
+                            "ForecastingPanel.js:renderInvenTreeForecastingPanel"
+                        ),
+                        "context": {
+                            # Provide additional context data to the panel
+                            "settings": self.get_settings_dict(),
+                        },
+                    })
 
         return panels
 
