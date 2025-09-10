@@ -48,4 +48,9 @@ setuptools.setup(
             "InvenTreeForecasting = inventree_forecasting.core:InvenTreeForecasting"
         ]
     },
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "Operating System :: OS Independent",
+        "Framework :: InvenTree",
+    ],
 )
