@@ -30,7 +30,7 @@ setuptools.setup(
     description="Stock forecasting for InvenTree based on scheduled orders",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/inventree/inventree-forecasting",
+    url="https://github.com/inventree/inventree-stock-forecasting",
     license="MIT",
     packages=setuptools.find_packages(),
     keywords="inventree plugin",
