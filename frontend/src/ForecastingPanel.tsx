@@ -4,7 +4,7 @@ import {
   formatDecimal,
   getDetailUrl,
   type InvenTreePluginContext,
-  type ModelType,
+  ModelType,
   navigateToLink
 } from '@inventreedb/ui';
 import { type ChartTooltipProps, LineChart } from '@mantine/charts';
@@ -367,7 +367,7 @@ export function ForecastingTable({
       },
       {
         accessor: 'quantity',
-        title: 'Quantity Change',
+        title: 'Quantity',
         sortable: true,
         render: (record: any) => {
           let prefix: string = '';
@@ -406,6 +406,22 @@ export function ForecastingTable({
             );
           } else {
             return <Text>{record.label}</Text>;
+          }
+        }
+      },
+      {
+        accessor: 'part',
+        title: 'Part',
+        sortable: false,
+        render: (record: any) => {
+          if (record.part) {
+            return context.renderInstance({
+              instance: record.part,
+              model: ModelType.part,
+              navigate: context.navigate
+            });
+          } else {
+            return '-';
           }
         }
       },

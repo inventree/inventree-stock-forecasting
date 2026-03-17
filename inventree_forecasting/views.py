@@ -18,6 +18,7 @@ import build.status_codes as build_status
 import order.models as order_models
 import order.status_codes as order_status
 import part.models as part_models
+import part.serializers as part_serializers
 from InvenTree.helpers import DownloadFile
 from InvenTree.mixins import RetrieveAPI
 
@@ -148,9 +149,12 @@ class PartForecastingView(RetrieveAPI):
         """
         entries = [
             *self.generate_purchase_order_entries(part, include_variants),
-            *self.generate_sales_order_entries(part, include_variants),
             *self.generate_build_order_entries(part, include_variants),
-            *self.generate_build_order_allocations(part, include_variants),
+            *self.generate_upstream_entries(
+                part,
+                include_variants=include_variants,
+                include_upstream=include_upstream,
+            ),
         ]
 
         def compare_entries(entry_1: dict, entry_2: dict) -> int:
@@ -179,18 +183,25 @@ class PartForecastingView(RetrieveAPI):
         instance: Model,
         quantity: float,
         date: Optional[date] = None,
+        part: Optional[part_models.Part] = None,
         title: str = "",
         multiplier: float = 1.0,
     ):
         """Generate a forecasting entry for a part.
 
         Arguments:
+            part: The part for which to generate the entry.
             instance (Model): The model instance (e.g., PurchaseOrder) for which the entry is associated
             quantity (float): The forecasted quantity.
             date (date): The date for the forecast entry.
             title (str): Optional title for the entry.
             multiplier (float): A multiplier to apply to the quantity (e.g., to account for higher level assemblies)
         """
+
+        # If a part is provided, serialize it for inclusion in the entry
+        if part:
+            part = part_serializers.PartBriefSerializer(part).data
+
         return {
             "date": date,
             "quantity": float(quantity) * multiplier,
@@ -198,6 +209,7 @@ class PartForecastingView(RetrieveAPI):
             "title": str(title),
             "model_type": instance.__class__.__name__.lower(),
             "model_id": instance.pk,
+            "part": part,
         }
 
     def generate_purchase_order_entries(
@@ -237,6 +249,7 @@ class PartForecastingView(RetrieveAPI):
                         line.order,
                         quantity,
                         target_date,
+                        part=line.part.part if line.part and line.part.part else None,
                         title=_("Incoming Purchase Order"),
                     )
                 )
@@ -244,9 +257,16 @@ class PartForecastingView(RetrieveAPI):
         return entries
 
     def generate_sales_order_entries(
-        self, part: part_models.Part, include_variants: bool
+        self, part: part_models.Part, include_variants: bool, multiplier: float = 1.0
     ) -> list:
-        """Generate forecasting entries for sales orders related to the part."""
+        """Generate forecasting entries for sales orders related to the part.
+
+        Arguments:
+            part (part_models.Part): The part for which to generate entries.
+            include_variants (bool): Whether to include variant parts in the stock count.
+            multiplier (float): A multiplier to apply to the quantity (e.g., to account for
+
+        """
         entries = []
 
         # Find all open sales order line items
@@ -268,12 +288,23 @@ class PartForecastingView(RetrieveAPI):
             quantity = -1 * max(0, line.quantity - line.shipped)
 
             if abs(quantity) > 0:
+                print(
+                    "-- Adding",
+                    line.order.reference,
+                    "requires",
+                    quantity,
+                    "x",
+                    line.part,
+                )
+
                 entries.append(
                     self.generate_entry(
                         line.order,
                         quantity,
                         target_date,
                         title=_("Outgoing Sales Order"),
+                        multiplier=multiplier,
+                        part=line.part,
                     )
                 )
 
@@ -282,7 +313,11 @@ class PartForecastingView(RetrieveAPI):
     def generate_build_order_entries(
         self, part: part_models.Part, include_variants: bool
     ) -> list:
-        """Generate forecasting entries for build orders related to the part."""
+        """Generate forecasting entries for build orders related to the part.
+
+        This is a list of build orders which will *increase* the stock level of this part,
+        as they represent assemblies of this part which are currently in progress.
+        """
         entries = []
 
         # Find all open build orders
@@ -307,6 +342,7 @@ class PartForecastingView(RetrieveAPI):
                         build,
                         quantity,
                         build.target_date,
+                        part=build.part,
                         title=_("Assembled via Build Order"),
                     )
                 )
@@ -353,18 +389,91 @@ class PartForecastingView(RetrieveAPI):
             bom_item__sub_part__in=parts,
             build__status__in=build_status.BuildStatusGroups.ACTIVE_CODES,
             consumed__lt=F("quantity"),
-        ).select_related("bom_item", "build")
-
+        ).select_related("bom_item", "build", "bom_item__part")
         for line in lines:
             remaining = max(0, line.quantity - line.consumed)
-            entries.append(
-                self.generate_entry(
-                    line.build,
-                    -1 * remaining,
-                    line.build.start_date or line.build.target_date,
-                    title=_("Required for Build Order"),
-                    multiplier=multiplier,
+
+            if remaining > 0:
+                print(
+                    "-- Adding",
+                    line.build.reference,
+                    "requires",
+                    remaining,
+                    "x",
+                    line.bom_item.sub_part,
+                )
+
+                entries.append(
+                    self.generate_entry(
+                        line.build,
+                        -1 * remaining,
+                        line.build.start_date or line.build.target_date,
+                        title=_("Required for Build Order"),
+                        part=line.bom_item.part,
+                        multiplier=multiplier,
+                    )
+                )
+
+        return entries
+
+    def generate_upstream_entries(
+        self,
+        part: part_models.Part,
+        include_variants: bool = False,
+        include_upstream: bool = False,
+    ) -> dict:
+        """Generate a forecasting entry for upstream orders related to the part.
+
+        - This looks at forecasting for any assemblies which use this part - and any higher level assemblies too
+        - For each of those assemblies, we look at any outstanding build orders or sales orders which require the part
+        """
+
+        entries = []
+
+        parts_observed = set()
+
+        # Start with the bottom level part, and work upwards through the assembly tree
+        parts_to_process = [(part, 0, 1.0)]
+
+        while parts_to_process:
+            current_part, level, multiplier = parts_to_process.pop()
+
+            parts_observed.add(current_part.pk)
+
+            print("- Processing:", current_part, "x", multiplier, "@ level", level)
+
+            # Add sales order requirements for this particular part
+            entries += self.generate_sales_order_entries(
+                current_part, include_variants, multiplier=multiplier
+            )
+
+            # Add build order requirements for this particular part
+            entries += self.generate_build_order_allocations(
+                current_part, include_variants, multiplier=multiplier
+            )
+
+            # Find any assembly parts which use this one
+            bom_items = part_models.BomItem.objects.filter(
+                current_part.get_used_in_bom_item_filter(
+                    include_variants=include_variants, include_substitutes=False
                 )
             )
+
+            for item in bom_items:
+                if item.part.pk in parts_observed:
+                    continue
+
+                print("> Used in assembly:", item.part, "x", item.quantity)
+
+                # Add this assembly to the list of parts to process
+                parts_to_process.append((
+                    item.part,
+                    level + 1,
+                    float(multiplier) * float(item.quantity),
+                ))
+
+            # No further processing if we are not including upstream assemblies
+            if not include_upstream:
+                break
 
         return entries
