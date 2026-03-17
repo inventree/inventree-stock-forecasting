@@ -233,7 +233,9 @@ export function ForecastingChart({
       >
         <Text>
           The available forecasting data is insufficient to display a meaningful
-          chart. To provide a useful forecast, the requiring orders must have associated dates which are in the future.        </Text>
+          chart. To provide a useful forecast, the requiring orders must have
+          associated dates which are in the future.{' '}
+        </Text>
       </Alert>
     );
   }
@@ -312,7 +314,6 @@ export function ForecastingTable({
   }, [entries, sortStatus]);
 
   const columns = useMemo(() => {
-
     const today = dayjs();
 
     return [
@@ -326,13 +327,17 @@ export function ForecastingTable({
             return (
               <Group gap='xs' justify='space-between'>
                 <Text c='red' fs='italic'>
-                No date specified
-              </Text>
-                <Tooltip label={'This entry has no associated date, so the quantity is speculative'}>
-                <ActionIcon color='red' variant='transparent'>
-                  <IconExclamationCircle />
-                </ActionIcon>
-                </Tooltip>                
+                  No date specified
+                </Text>
+                <Tooltip
+                  label={
+                    'This entry has no associated date, so the quantity is speculative'
+                  }
+                >
+                  <ActionIcon color='red' variant='transparent'>
+                    <IconExclamationCircle />
+                  </ActionIcon>
+                </Tooltip>
               </Group>
             );
           }
@@ -341,13 +346,17 @@ export function ForecastingTable({
           if (dayjs(record.date).isBefore(today)) {
             return (
               <Group gap='xs' justify='space-between'>
-              <Text c='red' fs='italic'>
-                {record.date}
-              </Text>
-                <Tooltip label={'This entry is in the past, so the quantity is speculative'}>
-                <ActionIcon color='red' variant='transparent'>
-                  <IconExclamationCircle />
-                </ActionIcon>
+                <Text c='red' fs='italic'>
+                  {record.date}
+                </Text>
+                <Tooltip
+                  label={
+                    'This entry is in the past, so the quantity is speculative'
+                  }
+                >
+                  <ActionIcon color='red' variant='transparent'>
+                    <IconExclamationCircle />
+                  </ActionIcon>
                 </Tooltip>
               </Group>
             );
@@ -516,48 +525,53 @@ function InvenTreeForecastingPanel({
         <Paper withBorder p='sm' m='sm'>
           <Group gap='xs' justify='space-between' align='flex-end'>
             <Group gap='xs' align='start'>
-            <Select
-              label={'Include Variant Parts'}
-              value={includeVariants ? 'true' : 'false'}
-              onChange={(value) => {
-                setIncludeVariants(value === 'true');
-              }}
-              data={[
-                {
-                  value: 'false',
-                  label: 'No'
-                },
-                {
-                  value: 'true',
-                  label: 'Yes'
-                }
-              ]}
-            />
+              <Select
+                label={'Include Variant Parts'}
+                value={includeVariants ? 'true' : 'false'}
+                onChange={(value) => {
+                  setIncludeVariants(value === 'true');
+                }}
+                data={[
+                  {
+                    value: 'false',
+                    label: 'No'
+                  },
+                  {
+                    value: 'true',
+                    label: 'Yes'
+                  }
+                ]}
+              />
             </Group>
             <Group gap='xs' align='end'>
               <Tooltip label={'Refresh Forecasting Data'}>
-              <Button variant='transparent' color='green' onClick={(_event: any) => forecastingQuery.refetch()} disabled={forecastingQuery.isFetching}>
-                <IconRefresh />
-              </Button>
+                <Button
+                  variant='transparent'
+                  color='green'
+                  onClick={(_event: any) => forecastingQuery.refetch()}
+                  disabled={forecastingQuery.isFetching}
+                >
+                  <IconRefresh />
+                </Button>
               </Tooltip>
-            <Menu>
-              <Menu.Target>
-                <Tooltip label={'Export Forecasting Data'}>
-                <Button leftSection={<IconFileDownload />}>Export</Button>
-                </Tooltip>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item key='csv' onClick={() => downloadData('csv')}>
-                  CSV
-                </Menu.Item>
-                <Menu.Item key='xls' onClick={() => downloadData('xls')}>
-                  XLS
-                </Menu.Item>
-                <Menu.Item key='xlsx' onClick={() => downloadData('xlsx')}>
-                  XLSX
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
+              <Menu>
+                <Menu.Target>
+                  <Tooltip label={'Export Forecasting Data'}>
+                    <Button leftSection={<IconFileDownload />}>Export</Button>
+                  </Tooltip>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item key='csv' onClick={() => downloadData('csv')}>
+                    CSV
+                  </Menu.Item>
+                  <Menu.Item key='xls' onClick={() => downloadData('xls')}>
+                    XLS
+                  </Menu.Item>
+                  <Menu.Item key='xlsx' onClick={() => downloadData('xlsx')}>
+                    XLSX
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
             </Group>
           </Group>
         </Paper>
