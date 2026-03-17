@@ -10,6 +10,7 @@ import {
 import { type ChartTooltipProps, LineChart } from '@mantine/charts';
 import {
   Accordion,
+  ActionIcon,
   Alert,
   Anchor,
   Button,
@@ -21,12 +22,14 @@ import {
   Skeleton,
   Stack,
   Text,
-  Title
+  Title,
+  Tooltip
 } from '@mantine/core';
 import {
   IconExclamationCircle,
   IconFileDownload,
-  IconInfoCircle
+  IconInfoCircle,
+  IconRefresh
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -230,8 +233,8 @@ export function ForecastingChart({
       >
         <Text>
           The available forecasting data is insufficient to display a meaningful
-          chart. Please ensure that there are future entries with specified
-          dates.
+          chart. To provide a useful forecast, the requiring orders must have
+          associated dates which are in the future.{' '}
         </Text>
       </Alert>
     );
@@ -311,6 +314,8 @@ export function ForecastingTable({
   }, [entries, sortStatus]);
 
   const columns = useMemo(() => {
+    const today = dayjs();
+
     return [
       {
         accessor: 'date',
@@ -320,18 +325,40 @@ export function ForecastingTable({
           // No date specified
           if (!record.date) {
             return (
-              <Text c='red' fs='italic'>
-                No date specified
-              </Text>
+              <Group gap='xs' justify='space-between'>
+                <Text c='red' fs='italic'>
+                  No date specified
+                </Text>
+                <Tooltip
+                  label={
+                    'This entry has no associated date, so the quantity is speculative'
+                  }
+                >
+                  <ActionIcon color='red' variant='transparent'>
+                    <IconExclamationCircle />
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
             );
           }
 
           // Date is specified, but in the past
-          if (dayjs(record.date).isBefore(dayjs())) {
+          if (dayjs(record.date).isBefore(today)) {
             return (
-              <Text c='red' fs='italic'>
-                {record.date}
-              </Text>
+              <Group gap='xs' justify='space-between'>
+                <Text c='red' fs='italic'>
+                  {record.date}
+                </Text>
+                <Tooltip
+                  label={
+                    'This entry is in the past, so the quantity is speculative'
+                  }
+                >
+                  <ActionIcon color='red' variant='transparent'>
+                    <IconExclamationCircle />
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
             );
           }
 
@@ -362,7 +389,7 @@ export function ForecastingTable({
         title: 'Reference',
         sortable: true,
         render: (record: any) => {
-          const url = getDetailUrl(record.model_type, record.model_id);
+          const url = getDetailUrl(record.model_type, record.model_id, true);
 
           if (url) {
             return (
@@ -384,7 +411,7 @@ export function ForecastingTable({
       },
       {
         accessor: 'model_type',
-        title: 'Model Type',
+        title: 'Reference Type',
         sortable: true,
         render: (record: any) => {
           // If the model type is not specified, return an empty string
@@ -497,39 +524,55 @@ function InvenTreeForecastingPanel({
       <Stack gap='xs'>
         <Paper withBorder p='sm' m='sm'>
           <Group gap='xs' justify='space-between' align='flex-end'>
-            <Select
-              label={'Include Variant Parts'}
-              value={includeVariants ? 'true' : 'false'}
-              onChange={(value) => {
-                setIncludeVariants(value === 'true');
-              }}
-              data={[
-                {
-                  value: 'false',
-                  label: 'No'
-                },
-                {
-                  value: 'true',
-                  label: 'Yes'
-                }
-              ]}
-            />
-            <Menu>
-              <Menu.Target>
-                <Button leftSection={<IconFileDownload />}>Export</Button>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item key='csv' onClick={() => downloadData('csv')}>
-                  CSV
-                </Menu.Item>
-                <Menu.Item key='xls' onClick={() => downloadData('xls')}>
-                  XLS
-                </Menu.Item>
-                <Menu.Item key='xlsx' onClick={() => downloadData('xlsx')}>
-                  XLSX
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
+            <Group gap='xs' align='start'>
+              <Select
+                label={'Include Variant Parts'}
+                value={includeVariants ? 'true' : 'false'}
+                onChange={(value) => {
+                  setIncludeVariants(value === 'true');
+                }}
+                data={[
+                  {
+                    value: 'false',
+                    label: 'No'
+                  },
+                  {
+                    value: 'true',
+                    label: 'Yes'
+                  }
+                ]}
+              />
+            </Group>
+            <Group gap='xs' align='end'>
+              <Tooltip label={'Refresh Forecasting Data'}>
+                <Button
+                  variant='transparent'
+                  color='green'
+                  onClick={(_event: any) => forecastingQuery.refetch()}
+                  disabled={forecastingQuery.isFetching}
+                >
+                  <IconRefresh />
+                </Button>
+              </Tooltip>
+              <Menu>
+                <Menu.Target>
+                  <Tooltip label={'Export Forecasting Data'}>
+                    <Button leftSection={<IconFileDownload />}>Export</Button>
+                  </Tooltip>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item key='csv' onClick={() => downloadData('csv')}>
+                    CSV
+                  </Menu.Item>
+                  <Menu.Item key='xls' onClick={() => downloadData('xls')}>
+                    XLS
+                  </Menu.Item>
+                  <Menu.Item key='xlsx' onClick={() => downloadData('xlsx')}>
+                    XLSX
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Group>
           </Group>
         </Paper>
         {(forecastingQuery.isLoading || forecastingQuery.isFetching) && (
