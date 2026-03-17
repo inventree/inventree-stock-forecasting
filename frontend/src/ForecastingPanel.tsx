@@ -10,6 +10,7 @@ import {
 import { type ChartTooltipProps, LineChart } from '@mantine/charts';
 import {
   Accordion,
+  ActionIcon,
   Alert,
   Anchor,
   Button,
@@ -21,7 +22,8 @@ import {
   Skeleton,
   Stack,
   Text,
-  Title
+  Title,
+  Tooltip
 } from '@mantine/core';
 import {
   IconExclamationCircle,
@@ -230,9 +232,7 @@ export function ForecastingChart({
       >
         <Text>
           The available forecasting data is insufficient to display a meaningful
-          chart. Please ensure that there are future entries with specified
-          dates.
-        </Text>
+          chart. To provide a useful forecast, the requiring orders must have associated dates which are in the future.        </Text>
       </Alert>
     );
   }
@@ -311,6 +311,9 @@ export function ForecastingTable({
   }, [entries, sortStatus]);
 
   const columns = useMemo(() => {
+
+    const today = dayjs();
+
     return [
       {
         accessor: 'date',
@@ -320,18 +323,32 @@ export function ForecastingTable({
           // No date specified
           if (!record.date) {
             return (
-              <Text c='red' fs='italic'>
+              <Group gap='xs' justify='space-between'>
+                <Text c='red' fs='italic'>
                 No date specified
               </Text>
+                <Tooltip label={'This entry has not associated date, so the quantity is speculative'}>
+                <ActionIcon color='red' variant='transparent'>
+                  <IconExclamationCircle />
+                </ActionIcon>
+                </Tooltip>                
+              </Group>
             );
           }
 
           // Date is specified, but in the past
-          if (dayjs(record.date).isBefore(dayjs())) {
+          if (dayjs(record.date).isBefore(today)) {
             return (
+              <Group gap='xs' justify='space-between'>
               <Text c='red' fs='italic'>
                 {record.date}
               </Text>
+                <Tooltip label={'This entry is in the past, so the quantity is speculative'}>
+                <ActionIcon color='red' variant='transparent'>
+                  <IconExclamationCircle />
+                </ActionIcon>
+                </Tooltip>
+              </Group>
             );
           }
 
@@ -362,7 +379,7 @@ export function ForecastingTable({
         title: 'Reference',
         sortable: true,
         render: (record: any) => {
-          const url = getDetailUrl(record.model_type, record.model_id);
+          const url = getDetailUrl(record.model_type, record.model_id, true);
 
           if (url) {
             return (
@@ -384,7 +401,7 @@ export function ForecastingTable({
       },
       {
         accessor: 'model_type',
-        title: 'Model Type',
+        title: 'Reference Type',
         sortable: true,
         render: (record: any) => {
           // If the model type is not specified, return an empty string
