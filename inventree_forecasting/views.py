@@ -288,15 +288,6 @@ class PartForecastingView(RetrieveAPI):
             quantity = -1 * max(0, line.quantity - line.shipped)
 
             if abs(quantity) > 0:
-                print(
-                    "-- Adding",
-                    line.order.reference,
-                    "requires",
-                    quantity,
-                    "x",
-                    line.part,
-                )
-
                 entries.append(
                     self.generate_entry(
                         line.order,
@@ -394,15 +385,6 @@ class PartForecastingView(RetrieveAPI):
             remaining = max(0, line.quantity - line.consumed)
 
             if remaining > 0:
-                print(
-                    "-- Adding",
-                    line.build.reference,
-                    "requires",
-                    remaining,
-                    "x",
-                    line.bom_item.sub_part,
-                )
-
                 entries.append(
                     self.generate_entry(
                         line.build,
@@ -440,8 +422,6 @@ class PartForecastingView(RetrieveAPI):
 
             parts_observed.add(current_part.pk)
 
-            print("- Processing:", current_part, "x", multiplier, "@ level", level)
-
             # Add sales order requirements for this particular part
             entries += self.generate_sales_order_entries(
                 current_part, include_variants, multiplier=multiplier
@@ -462,8 +442,6 @@ class PartForecastingView(RetrieveAPI):
             for item in bom_items:
                 if item.part.pk in parts_observed:
                     continue
-
-                print("> Used in assembly:", item.part, "x", item.quantity)
 
                 # Add this assembly to the list of parts to process
                 parts_to_process.append((
