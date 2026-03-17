@@ -363,12 +363,16 @@ class PartForecastingView(RetrieveAPI):
                         if allocation.stock_item.part == part:
                             part_allocated_quantity += allocation.quantity
 
+                    # Determine the date associated with this build order
+                    # We prioritise the start date, but if that is not available, we can fall back to the target date
+                    build_date = getattr(build, "start_date", None) or getattr(build, "target_date", None)
+
                     if part_allocated_quantity > 0:
                         entries.append(
                             self.generate_entry(
                                 build,
                                 -1 * part_allocated_quantity,
-                                build.target_date,
+                                build_date,
                                 title=_("Allocated to Build Order"),
                             )
                         )
@@ -379,7 +383,7 @@ class PartForecastingView(RetrieveAPI):
                             self.generate_entry(
                                 build,
                                 -1 * (required_quantity - total_allocated_quantity),
-                                build.target_date,
+                                build_date,
                                 title=_("Required for Build Order"),
                             )
                         )
