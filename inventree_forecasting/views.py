@@ -257,7 +257,7 @@ class PartForecastingView(RetrieveAPI):
         return entries
 
     def generate_sales_order_entries(
-        self, part: part_models.Part, include_variants: bool, multiplier: float = 1.0, in_stock: float = 0
+        self, part: part_models.Part, include_variants: bool, multiplier: float = 1.0, assembly_stock: Optional[dict] = None
     ) -> list:
         """Generate forecasting entries for sales orders related to the part.
 
@@ -265,7 +265,7 @@ class PartForecastingView(RetrieveAPI):
             part (part_models.Part): The part for which to generate entries.
             include_variants (bool): Whether to include variant parts in the stock count.
             multiplier (float): A multiplier to apply to the quantity (e.g., to account for
-            in_stock (float): The quantity of the part already in stock or incoming. This can be used to "offset" the sales order requirements, to give a more accurate forecast of future stock levels.
+            assembly_stock: A dictionary mapping part PKs to their current stock level, to allow "offsetting" of sales order requirements based on available stock.
         """
         entries = []
 
@@ -287,7 +287,15 @@ class PartForecastingView(RetrieveAPI):
             # Negative quantities indicate outgoing sales orders
 
             # The outstanding quantity which will be required
-            outstanding = max(0, line.quantity - line.shipped - in_stock)
+            outstanding = max(0, line.quantity - line.shipped)
+
+            # If this is a higher level assembly, we can reduce the outstanding requirement, based on the available stock for this assembly
+            if assembly_stock:
+                available = assembly_stock.get(part.pk, 0)
+                adjustment = min(available, outstanding)
+                assembly_stock[line.part.pk] = available - adjustment
+                outstanding -= adjustment
+                outstanding = max(0, outstanding)
 
             if abs(outstanding) > 0:
                 entries.append(
@@ -343,7 +351,7 @@ class PartForecastingView(RetrieveAPI):
         return entries
 
     def generate_build_order_allocations(
-        self, part: part_models.Part, include_variants: bool, multiplier: float = 1.0, in_stock: float = 0
+        self, part: part_models.Part, include_variants: bool, multiplier: float = 1.0, assembly_stock: Optional[dict] = None
     ) -> list:
         """Generate forecasting entries for build order allocations related to the part.
 
@@ -353,7 +361,7 @@ class PartForecastingView(RetrieveAPI):
             part (part_models.Part): The part for which to generate entries.
             include_variants (bool): Whether to include variant parts in the stock count.
             multiplier (float): A multiplier to apply to the required quantity (e.g., to account for higher level assemblies)
-            in_stock (float): The quantity of the part already in stock or incoming. This can be used to "offset" the build order requirements, to give a more accurate forecast of future stock levels.
+            assembly_stock (dict): A dictionary mapping part PKs to their current stock level, to allow "offsetting" of build order requirements based on available stock.
             
         Here we need some careful consideration:
 
@@ -385,7 +393,15 @@ class PartForecastingView(RetrieveAPI):
             consumed__lt=F("quantity"),
         ).select_related("bom_item", "build", "bom_item__part")
         for line in lines:
-            remaining = max(0, line.quantity - line.consumed - in_stock)
+            remaining = max(0, line.quantity - line.consumed)
+
+            # If this is a higher level assembly, we can reduce the required quantity, based on the available stock for this assembly
+            if assembly_stock:
+                available = assembly_stock.get(part.pk, 0)
+                adjustment = min(available, remaining)
+                assembly_stock[line.part.pk] = available - adjustment
+                remaining -= adjustment
+                remaining = max(0, remaining)
 
             if remaining > 0:
                 entries.append(
@@ -417,31 +433,34 @@ class PartForecastingView(RetrieveAPI):
 
         parts_observed = set()
 
+        # Keep track of the stock level for higher level assemblies
+        assembly_stock = {}
+
         # Start with the bottom level part, and work upwards through the assembly tree
         parts_to_process = [(part, 0, 1.0)]
 
         while parts_to_process:
             current_part, level, multiplier = parts_to_process.pop()
 
-            parts_observed.add(current_part.pk)
+            # parts_observed.add(current_part.pk)
 
-            if level > 0:
+            if current_part.pk not in assembly_stock:
+                # Calculate the available stock for a given assembly
                 # For higher level entries, account for the "in stock" quantity
                 # This includes stock on order, or being built
                 in_stock = current_part.get_stock_count(include_variants=False)
                 in_stock += current_part.on_order
                 in_stock += current_part.quantity_being_built
-            else:
-                in_stock = 0
+                assembly_stock[current_part.pk] = in_stock
 
             # Add sales order requirements for this particular part
             entries += self.generate_sales_order_entries(
-                current_part, include_variants, multiplier=multiplier, in_stock=in_stock
+                current_part, include_variants, multiplier=multiplier, assembly_stock=assembly_stock if level > 0 else None
             )
 
             # Add build order requirements for this particular part
             entries += self.generate_build_order_allocations(
-                current_part, include_variants, multiplier=multiplier, in_stock=in_stock
+                current_part, include_variants, multiplier=multiplier, assembly_stock=assembly_stock if level > 0 else None
             )
 
             # Find any assembly parts which use this one
