@@ -225,7 +225,7 @@ export function ForecastingChart({
   }, [minimumStock, maximumStock]);
 
   // No useful information to display
-  if (chartData.length <= 1) {
+  if (chartData.length == 0) {
     return (
       <Alert
         color='yellow'
@@ -284,6 +284,10 @@ export function ForecastingTable({
   // Keep an internal copy of the records, so we can sort the table
   const [records, setRecords] = useState<any[]>([]);
 
+  const totalQuantity: number = useMemo(() => {
+    return entries.reduce((sum, entry) => sum + parseFloat(entry.quantity), 0);
+  }, [entries]);
+
   useEffect(() => {
     const sortedEntries = [...entries];
 
@@ -318,6 +322,70 @@ export function ForecastingTable({
     const today = dayjs();
 
     return [
+      {
+        accessor: 'label',
+        title: 'Reference',
+        sortable: true,
+        render: (record: any) => {
+          const url = getDetailUrl(record.model_type, record.model_id, true);
+
+          if (url) {
+            return (
+              <Anchor
+                onClick={(event: any) =>
+                  navigateToLink(url, context.navigate, event)
+                }
+                href={url}
+                target='_blank'
+                rel='noopener noreferrer'
+              >
+                {record.label}
+              </Anchor>
+            );
+          } else {
+            return <Text>{record.label}</Text>;
+          }
+        }
+      },
+      {
+        accessor: 'part',
+        title: 'Part',
+        sortable: false,
+        render: (record: any) => {
+          if (record.part) {
+            return context.renderInstance({
+              instance: record.part,
+              model: ModelType.part,
+              navigate: context.navigate
+            });
+          } else {
+            return '-';
+          }
+        }
+      },
+      {
+        accessor: 'model_type',
+        title: 'Reference Type',
+        sortable: true,
+        render: (record: any) => {
+          // If the model type is not specified, return an empty string
+          if (!record.model_type) {
+            return '';
+          }
+
+          // Access the model information
+          return (
+            context.modelInformation[
+              record.model_type as ModelType
+            ]?.label?.() ?? record.model_type
+          );
+        }
+      },
+      {
+        accessor: 'title',
+        title: 'Description',
+        sortable: false
+      },
       {
         accessor: 'date',
         title: 'Date',
@@ -383,74 +451,16 @@ export function ForecastingTable({
               {record.quantity}
             </Text>
           );
-        }
-      },
-      {
-        accessor: 'label',
-        title: 'Reference',
-        sortable: true,
-        render: (record: any) => {
-          const url = getDetailUrl(record.model_type, record.model_id, true);
-
-          if (url) {
-            return (
-              <Anchor
-                onClick={(event: any) =>
-                  navigateToLink(url, context.navigate, event)
-                }
-                href={url}
-                target='_blank'
-                rel='noopener noreferrer'
-              >
-                {record.label}
-              </Anchor>
-            );
-          } else {
-            return <Text>{record.label}</Text>;
-          }
-        }
-      },
-      {
-        accessor: 'part',
-        title: 'Part',
-        sortable: false,
-        render: (record: any) => {
-          if (record.part) {
-            return context.renderInstance({
-              instance: record.part,
-              model: ModelType.part,
-              navigate: context.navigate
-            });
-          } else {
-            return '-';
-          }
-        }
-      },
-      {
-        accessor: 'model_type',
-        title: 'Reference Type',
-        sortable: true,
-        render: (record: any) => {
-          // If the model type is not specified, return an empty string
-          if (!record.model_type) {
-            return '';
-          }
-
-          // Access the model information
-          return (
-            context.modelInformation[
-              record.model_type as ModelType
-            ]?.label?.() ?? record.model_type
-          );
-        }
-      },
-      {
-        accessor: 'title',
-        title: 'Description',
-        sortable: false
+        },
+        footer: (
+          <Text fw='bold'>
+            Total: {totalQuantity > 0 && '+'}
+            {totalQuantity}
+          </Text>
+        )
       }
     ];
-  }, [context.modelInformation, context.locale]);
+  }, [context.modelInformation, context.locale, totalQuantity]);
 
   return (
     <DataTable
