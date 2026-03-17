@@ -485,22 +485,17 @@ function InvenTreeForecastingPanel({
       refetchOnMount: true,
       refetchOnWindowFocus: false,
       queryFn: async () => {
-        return (
-          context.api
-            ?.get(`/${FORECASTING_URL}`, {
-              params: {
-                part: context.id,
-                include_variants: includeVariants,
-                include_upstream: includeUpstream
-              }
-            })
-            .then((response: any) => {
-              return response.data;
-            })
-            .catch(() => {
-              return {};
-            }) ?? {}
-        );
+        return context.api
+          ?.get(`/${FORECASTING_URL}`, {
+            params: {
+              part: context.id,
+              include_variants: includeVariants,
+              include_upstream: includeUpstream
+            }
+          })
+          .then((response: any) => {
+            return response.data;
+          });
       }
     },
     context.queryClient
