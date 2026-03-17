@@ -536,7 +536,7 @@ function InvenTreeForecastingPanel({
             </Group>
             <Group gap='xs' align='end'>
               <Tooltip label={'Refresh Forecasting Data'}>
-              <Button variant='transparent' color='green' onClick={forecastingQuery.refetch} disabled={forecastingQuery.isFetching}>
+              <Button variant='transparent' color='green' onClick={(_event: any) => forecastingQuery.refetch()} disabled={forecastingQuery.isFetching}>
                 <IconRefresh />
               </Button>
               </Tooltip>
