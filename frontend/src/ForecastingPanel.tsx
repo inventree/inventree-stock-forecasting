@@ -14,12 +14,13 @@ import {
   Alert,
   Anchor,
   Button,
+  Center,
   Divider,
   Group,
+  Loader,
   Menu,
   Paper,
   Select,
-  Skeleton,
   Stack,
   Text,
   Title,
@@ -610,10 +611,12 @@ function InvenTreeForecastingPanel({
             </Group>
           </Group>
         </Paper>
-        {(forecastingQuery.isLoading || forecastingQuery.isFetching) && (
-          <Skeleton animate height={300} />
+        {forecastingQuery.isFetching && (
+          <Center>
+            <Loader />
+          </Center>
         )}
-        {forecastingQuery.isError && (
+        {forecastingQuery.isError && !forecastingQuery.isFetching && (
           <Alert
             color='red'
             title='Error Loading Data'
