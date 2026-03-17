@@ -460,10 +460,12 @@ function InvenTreeForecastingPanel({
 }) {
   const [includeVariants, setIncludeVariants] = useState<boolean>(false);
 
+  const [includeUpstream, setIncludeUpstream] = useState<boolean>(false);
+
   // Callback function to download the forecasting data
   const downloadData = useCallback(
     (format: string) => {
-      let url = `${FORECASTING_URL}?part=${context.id}&include_variants=${includeVariants}&export=${format}`;
+      let url = `${FORECASTING_URL}?part=${context.id}&include_variants=${includeVariants}&include_upstream=${includeUpstream}&export=${format}`;
 
       if (context.host) {
         url = `${context.host}/${url}`;
@@ -473,13 +475,13 @@ function InvenTreeForecastingPanel({
 
       window.open(url, '_blank');
     },
-    [context.host, context.id, includeVariants]
+    [context.host, context.id, includeVariants, includeUpstream]
   );
 
   const forecastingQuery = useQuery(
     {
       enabled: !!context.id,
-      queryKey: ['forecasting', context.id, includeVariants],
+      queryKey: ['forecasting', context.id, includeVariants, includeUpstream],
       refetchOnMount: true,
       refetchOnWindowFocus: false,
       queryFn: async () => {
@@ -488,7 +490,8 @@ function InvenTreeForecastingPanel({
             ?.get(`/${FORECASTING_URL}`, {
               params: {
                 part: context.id,
-                include_variants: includeVariants
+                include_variants: includeVariants,
+                include_upstream: includeUpstream
               }
             })
             .then((response: any) => {
@@ -527,10 +530,6 @@ function InvenTreeForecastingPanel({
             <Group gap='xs' align='start'>
               <Select
                 label={'Include Variant Parts'}
-                value={includeVariants ? 'true' : 'false'}
-                onChange={(value) => {
-                  setIncludeVariants(value === 'true');
-                }}
                 data={[
                   {
                     value: 'false',
@@ -541,6 +540,29 @@ function InvenTreeForecastingPanel({
                     label: 'Yes'
                   }
                 ]}
+                value={includeVariants ? 'true' : 'false'}
+                onChange={(value) => {
+                  setIncludeVariants(value === 'true');
+                }}
+                disabled={forecastingQuery.isFetching}
+              />
+              <Select
+                label={'Include Upstream Requirements'}
+                data={[
+                  {
+                    value: 'false',
+                    label: 'No'
+                  },
+                  {
+                    value: 'true',
+                    label: 'Yes'
+                  }
+                ]}
+                value={includeUpstream ? 'true' : 'false'}
+                onChange={(value) => {
+                  setIncludeUpstream(value === 'true');
+                }}
+                disabled={forecastingQuery.isFetching}
               />
             </Group>
             <Group gap='xs' align='end'>
@@ -554,7 +576,9 @@ function InvenTreeForecastingPanel({
                   <IconRefresh />
                 </Button>
               </Tooltip>
-              <Menu>
+              <Menu
+                disabled={!hasForecastingData || forecastingQuery.isFetching}
+              >
                 <Menu.Target>
                   <Tooltip label={'Export Forecasting Data'}>
                     <Button leftSection={<IconFileDownload />}>Export</Button>
