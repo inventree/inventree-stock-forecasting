@@ -28,7 +28,8 @@ import {
 import {
   IconExclamationCircle,
   IconFileDownload,
-  IconInfoCircle
+  IconInfoCircle,
+  IconRefresh
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
@@ -327,7 +328,7 @@ export function ForecastingTable({
                 <Text c='red' fs='italic'>
                 No date specified
               </Text>
-                <Tooltip label={'This entry has not associated date, so the quantity is speculative'}>
+                <Tooltip label={'This entry has no associated date, so the quantity is speculative'}>
                 <ActionIcon color='red' variant='transparent'>
                   <IconExclamationCircle />
                 </ActionIcon>
@@ -514,6 +515,7 @@ function InvenTreeForecastingPanel({
       <Stack gap='xs'>
         <Paper withBorder p='sm' m='sm'>
           <Group gap='xs' justify='space-between' align='flex-end'>
+            <Group gap='xs' align='start'>
             <Select
               label={'Include Variant Parts'}
               value={includeVariants ? 'true' : 'false'}
@@ -531,9 +533,18 @@ function InvenTreeForecastingPanel({
                 }
               ]}
             />
+            </Group>
+            <Group gap='xs' align='end'>
+              <Tooltip label={'Refresh Forecasting Data'}>
+              <Button variant='transparent' color='green' onClick={forecastingQuery.refetch} disabled={forecastingQuery.isFetching}>
+                <IconRefresh />
+              </Button>
+              </Tooltip>
             <Menu>
               <Menu.Target>
+                <Tooltip label={'Export Forecasting Data'}>
                 <Button leftSection={<IconFileDownload />}>Export</Button>
+                </Tooltip>
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Item key='csv' onClick={() => downloadData('csv')}>
@@ -547,6 +558,7 @@ function InvenTreeForecastingPanel({
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
+            </Group>
           </Group>
         </Paper>
         {(forecastingQuery.isLoading || forecastingQuery.isFetching) && (
