@@ -257,7 +257,7 @@ class PartForecastingView(RetrieveAPI):
         return entries
 
     def generate_sales_order_entries(
-        self, part: part_models.Part, include_variants: bool, multiplier: float = 1.0
+        self, part: part_models.Part, include_variants: bool, multiplier: float = 1.0, in_stock: float = 0
     ) -> list:
         """Generate forecasting entries for sales orders related to the part.
 
@@ -265,7 +265,7 @@ class PartForecastingView(RetrieveAPI):
             part (part_models.Part): The part for which to generate entries.
             include_variants (bool): Whether to include variant parts in the stock count.
             multiplier (float): A multiplier to apply to the quantity (e.g., to account for
-
+            in_stock (float): The quantity of the part already in stock or incoming. This can be used to "offset" the sales order requirements, to give a more accurate forecast of future stock levels.
         """
         entries = []
 
@@ -285,13 +285,15 @@ class PartForecastingView(RetrieveAPI):
         for line in so_lines:
             target_date = line.target_date or line.order.target_date
             # Negative quantities indicate outgoing sales orders
-            quantity = -1 * max(0, line.quantity - line.shipped)
 
-            if abs(quantity) > 0:
+            # The outstanding quantity which will be required
+            outstanding = max(0, line.quantity - line.shipped - in_stock)
+
+            if abs(outstanding) > 0:
                 entries.append(
                     self.generate_entry(
                         line.order,
-                        quantity,
+                        -1 * outstanding,
                         target_date,
                         title=_("Outgoing Sales Order"),
                         multiplier=multiplier,
@@ -341,7 +343,7 @@ class PartForecastingView(RetrieveAPI):
         return entries
 
     def generate_build_order_allocations(
-        self, part: part_models.Part, include_variants: bool, multiplier: float = 1.0
+        self, part: part_models.Part, include_variants: bool, multiplier: float = 1.0, in_stock: float = 0
     ) -> list:
         """Generate forecasting entries for build order allocations related to the part.
 
@@ -351,7 +353,8 @@ class PartForecastingView(RetrieveAPI):
             part (part_models.Part): The part for which to generate entries.
             include_variants (bool): Whether to include variant parts in the stock count.
             multiplier (float): A multiplier to apply to the required quantity (e.g., to account for higher level assemblies)
-
+            in_stock (float): The quantity of the part already in stock or incoming. This can be used to "offset" the build order requirements, to give a more accurate forecast of future stock levels.
+            
         Here we need some careful consideration:
 
         - 'Tracked' stock items are removed from stock when the individual Build Output is completed
@@ -382,7 +385,7 @@ class PartForecastingView(RetrieveAPI):
             consumed__lt=F("quantity"),
         ).select_related("bom_item", "build", "bom_item__part")
         for line in lines:
-            remaining = max(0, line.quantity - line.consumed)
+            remaining = max(0, line.quantity - line.consumed - in_stock)
 
             if remaining > 0:
                 entries.append(
@@ -422,14 +425,23 @@ class PartForecastingView(RetrieveAPI):
 
             parts_observed.add(current_part.pk)
 
+            if level > 0:
+                # For higher level entries, account for the "in stock" quantity
+                # This includes stock on order, or being built
+                in_stock = current_part.get_stock_count(include_variants=False)
+                in_stock += current_part.on_order
+                in_stock += current_part.quantity_being_built
+            else:
+                in_stock = 0
+
             # Add sales order requirements for this particular part
             entries += self.generate_sales_order_entries(
-                current_part, include_variants, multiplier=multiplier
+                current_part, include_variants, multiplier=multiplier, in_stock=in_stock
             )
 
             # Add build order requirements for this particular part
             entries += self.generate_build_order_allocations(
-                current_part, include_variants, multiplier=multiplier
+                current_part, include_variants, multiplier=multiplier, in_stock=in_stock
             )
 
             # Find any assembly parts which use this one
