@@ -4,7 +4,7 @@ import {
   formatDecimal,
   getDetailUrl,
   type InvenTreePluginContext,
-  type ModelType,
+  ModelType,
   navigateToLink
 } from '@inventreedb/ui';
 import { type ChartTooltipProps, LineChart } from '@mantine/charts';
@@ -14,12 +14,13 @@ import {
   Alert,
   Anchor,
   Button,
+  Center,
   Divider,
   Group,
+  Loader,
   Menu,
   Paper,
   Select,
-  Skeleton,
   Stack,
   Text,
   Title,
@@ -224,7 +225,7 @@ export function ForecastingChart({
   }, [minimumStock, maximumStock]);
 
   // No useful information to display
-  if (chartData.length <= 1) {
+  if (chartData.length == 0) {
     return (
       <Alert
         color='yellow'
@@ -283,6 +284,10 @@ export function ForecastingTable({
   // Keep an internal copy of the records, so we can sort the table
   const [records, setRecords] = useState<any[]>([]);
 
+  const totalQuantity: number = useMemo(() => {
+    return entries.reduce((sum, entry) => sum + parseFloat(entry.quantity), 0);
+  }, [entries]);
+
   useEffect(() => {
     const sortedEntries = [...entries];
 
@@ -317,6 +322,70 @@ export function ForecastingTable({
     const today = dayjs();
 
     return [
+      {
+        accessor: 'label',
+        title: 'Reference',
+        sortable: true,
+        render: (record: any) => {
+          const url = getDetailUrl(record.model_type, record.model_id, true);
+
+          if (url) {
+            return (
+              <Anchor
+                onClick={(event: any) =>
+                  navigateToLink(url, context.navigate, event)
+                }
+                href={url}
+                target='_blank'
+                rel='noopener noreferrer'
+              >
+                {record.label}
+              </Anchor>
+            );
+          } else {
+            return <Text>{record.label}</Text>;
+          }
+        }
+      },
+      {
+        accessor: 'part',
+        title: 'Part',
+        sortable: false,
+        render: (record: any) => {
+          if (record.part) {
+            return context.renderInstance({
+              instance: record.part,
+              model: ModelType.part,
+              navigate: context.navigate
+            });
+          } else {
+            return '-';
+          }
+        }
+      },
+      {
+        accessor: 'model_type',
+        title: 'Reference Type',
+        sortable: true,
+        render: (record: any) => {
+          // If the model type is not specified, return an empty string
+          if (!record.model_type) {
+            return '';
+          }
+
+          // Access the model information
+          return (
+            context.modelInformation[
+              record.model_type as ModelType
+            ]?.label?.() ?? record.model_type
+          );
+        }
+      },
+      {
+        accessor: 'title',
+        title: 'Description',
+        sortable: false
+      },
       {
         accessor: 'date',
         title: 'Date',
@@ -367,7 +436,7 @@ export function ForecastingTable({
       },
       {
         accessor: 'quantity',
-        title: 'Quantity Change',
+        title: 'Quantity',
         sortable: true,
         render: (record: any) => {
           let prefix: string = '';
@@ -382,58 +451,16 @@ export function ForecastingTable({
               {record.quantity}
             </Text>
           );
-        }
-      },
-      {
-        accessor: 'label',
-        title: 'Reference',
-        sortable: true,
-        render: (record: any) => {
-          const url = getDetailUrl(record.model_type, record.model_id, true);
-
-          if (url) {
-            return (
-              <Anchor
-                onClick={(event: any) =>
-                  navigateToLink(url, context.navigate, event)
-                }
-                href={url}
-                target='_blank'
-                rel='noopener noreferrer'
-              >
-                {record.label}
-              </Anchor>
-            );
-          } else {
-            return <Text>{record.label}</Text>;
-          }
-        }
-      },
-      {
-        accessor: 'model_type',
-        title: 'Reference Type',
-        sortable: true,
-        render: (record: any) => {
-          // If the model type is not specified, return an empty string
-          if (!record.model_type) {
-            return '';
-          }
-
-          // Access the model information
-          return (
-            context.modelInformation[
-              record.model_type as ModelType
-            ]?.label?.() ?? record.model_type
-          );
-        }
-      },
-      {
-        accessor: 'title',
-        title: 'Description',
-        sortable: false
+        },
+        footer: (
+          <Text fw='bold'>
+            Total: {totalQuantity > 0 && '+'}
+            {totalQuantity}
+          </Text>
+        )
       }
     ];
-  }, [context.modelInformation, context.locale]);
+  }, [context.modelInformation, context.locale, totalQuantity]);
 
   return (
     <DataTable
@@ -460,10 +487,12 @@ function InvenTreeForecastingPanel({
 }) {
   const [includeVariants, setIncludeVariants] = useState<boolean>(false);
 
+  const [includeUpstream, setIncludeUpstream] = useState<boolean>(false);
+
   // Callback function to download the forecasting data
   const downloadData = useCallback(
     (format: string) => {
-      let url = `${FORECASTING_URL}?part=${context.id}&include_variants=${includeVariants}&export=${format}`;
+      let url = `${FORECASTING_URL}?part=${context.id}&include_variants=${includeVariants}&include_upstream=${includeUpstream}&export=${format}`;
 
       if (context.host) {
         url = `${context.host}/${url}`;
@@ -473,31 +502,27 @@ function InvenTreeForecastingPanel({
 
       window.open(url, '_blank');
     },
-    [context.host, context.id, includeVariants]
+    [context.host, context.id, includeVariants, includeUpstream]
   );
 
   const forecastingQuery = useQuery(
     {
       enabled: !!context.id,
-      queryKey: ['forecasting', context.id, includeVariants],
+      queryKey: ['forecasting', context.id, includeVariants, includeUpstream],
       refetchOnMount: true,
       refetchOnWindowFocus: false,
       queryFn: async () => {
-        return (
-          context.api
-            ?.get(`/${FORECASTING_URL}`, {
-              params: {
-                part: context.id,
-                include_variants: includeVariants
-              }
-            })
-            .then((response: any) => {
-              return response.data;
-            })
-            .catch(() => {
-              return {};
-            }) ?? {}
-        );
+        return context.api
+          ?.get(`/${FORECASTING_URL}`, {
+            params: {
+              part: context.id,
+              include_variants: includeVariants,
+              include_upstream: includeUpstream
+            }
+          })
+          .then((response: any) => {
+            return response.data;
+          });
       }
     },
     context.queryClient
@@ -527,10 +552,6 @@ function InvenTreeForecastingPanel({
             <Group gap='xs' align='start'>
               <Select
                 label={'Include Variant Parts'}
-                value={includeVariants ? 'true' : 'false'}
-                onChange={(value) => {
-                  setIncludeVariants(value === 'true');
-                }}
                 data={[
                   {
                     value: 'false',
@@ -541,6 +562,29 @@ function InvenTreeForecastingPanel({
                     label: 'Yes'
                   }
                 ]}
+                value={includeVariants ? 'true' : 'false'}
+                onChange={(value) => {
+                  setIncludeVariants(value === 'true');
+                }}
+                disabled={forecastingQuery.isFetching}
+              />
+              <Select
+                label={'Include Upstream Requirements'}
+                data={[
+                  {
+                    value: 'false',
+                    label: 'No'
+                  },
+                  {
+                    value: 'true',
+                    label: 'Yes'
+                  }
+                ]}
+                value={includeUpstream ? 'true' : 'false'}
+                onChange={(value) => {
+                  setIncludeUpstream(value === 'true');
+                }}
+                disabled={forecastingQuery.isFetching}
               />
             </Group>
             <Group gap='xs' align='end'>
@@ -554,7 +598,9 @@ function InvenTreeForecastingPanel({
                   <IconRefresh />
                 </Button>
               </Tooltip>
-              <Menu>
+              <Menu
+                disabled={!hasForecastingData || forecastingQuery.isFetching}
+              >
                 <Menu.Target>
                   <Tooltip label={'Export Forecasting Data'}>
                     <Button leftSection={<IconFileDownload />}>Export</Button>
@@ -575,10 +621,12 @@ function InvenTreeForecastingPanel({
             </Group>
           </Group>
         </Paper>
-        {(forecastingQuery.isLoading || forecastingQuery.isFetching) && (
-          <Skeleton animate height={300} />
+        {forecastingQuery.isFetching && (
+          <Center>
+            <Loader />
+          </Center>
         )}
-        {forecastingQuery.isError && (
+        {forecastingQuery.isError && !forecastingQuery.isFetching && (
           <Alert
             color='red'
             title='Error Loading Data'
