@@ -431,8 +431,6 @@ class PartForecastingView(RetrieveAPI):
 
         entries = []
 
-        parts_observed = set()
-
         # Keep track of the stock level for higher level assemblies
         assembly_stock = {}
 
@@ -442,7 +440,6 @@ class PartForecastingView(RetrieveAPI):
         while parts_to_process:
             current_part, level, multiplier = parts_to_process.pop()
 
-            # parts_observed.add(current_part.pk)
 
             if current_part.pk not in assembly_stock:
                 # Calculate the available stock for a given assembly
@@ -466,20 +463,26 @@ class PartForecastingView(RetrieveAPI):
             # Find any assembly parts which use this one
             bom_items = part_models.BomItem.objects.filter(
                 current_part.get_used_in_bom_item_filter(
-                    include_variants=include_variants, include_substitutes=False
+                    include_variants=True, include_substitutes=False
                 )
             )
 
             for item in bom_items:
-                if item.part.pk in parts_observed:
-                    continue
+                bom_quantity = float(item.quantity) * float(multiplier)
+
+                # If the BOM Item is inherited by variants
+                if item.inherited:
+                    parent_parts = list(item.part.get_descendants(include_self=True))
+                else:
+                    parent_parts = [item.part]
 
                 # Add this assembly to the list of parts to process
-                parts_to_process.append((
-                    item.part,
-                    level + 1,
-                    float(multiplier) * float(item.quantity),
-                ))
+                for parent_part in parent_parts:
+                    parts_to_process.append((
+                        parent_part,
+                        level + 1,
+                        bom_quantity,
+                    ))
 
             # No further processing if we are not including upstream assemblies
             if not include_upstream:
