@@ -569,7 +569,7 @@ function InvenTreeForecastingPanel({
                 disabled={forecastingQuery.isFetching}
               />
               <Select
-                label={'Include Upstream Requirements'}
+                label={'Include Upstream Assembly Demands'}
                 data={[
                   {
                     value: 'false',

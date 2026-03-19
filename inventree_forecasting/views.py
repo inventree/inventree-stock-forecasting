@@ -434,12 +434,24 @@ class PartForecastingView(RetrieveAPI):
         # Keep track of the stock level for higher level assemblies
         assembly_stock = {}
 
+        # Prevent recursion
+        observed_parts = set()
+
         # Start with the bottom level part, and work upwards through the assembly tree
         parts_to_process = [(part, 0, 1.0)]
 
         while parts_to_process:
             current_part, level, multiplier = parts_to_process.pop()
 
+            # No further processing if we are not including upstream assemblies
+            if level > 0 and not include_upstream:
+                continue
+
+            # Check if we have already processed this assembly
+            if current_part.pk in observed_parts:
+                continue
+
+            observed_parts.add(current_part.pk)
 
             if current_part.pk not in assembly_stock:
                 # Calculate the available stock for a given assembly
@@ -478,14 +490,15 @@ class PartForecastingView(RetrieveAPI):
 
                 # Add this assembly to the list of parts to process
                 for parent_part in parent_parts:
+
+                    # Skip inactive parts
+                    if not parent_part.active:
+                        continue
+
                     parts_to_process.append((
                         parent_part,
                         level + 1,
                         bom_quantity,
                     ))
-
-            # No further processing if we are not including upstream assemblies
-            if not include_upstream:
-                break
 
         return entries
