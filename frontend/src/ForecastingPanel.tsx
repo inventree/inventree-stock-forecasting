@@ -48,9 +48,9 @@ function ChartTooltip({ label, payload }: Readonly<ChartTooltipProps>) {
     label = dayjs(label).format('YYYY-MM-DD');
   }
 
-  const quantity = payload.find((item) => item.name == 'quantity');
-  const minimum = payload.find((item) => item.name == 'minimum');
-  const maximum = payload.find((item) => item.name == 'maximum');
+  const quantity = payload.find((item: any) => item.name == 'quantity');
+  const minimum = payload.find((item: any) => item.name == 'minimum');
+  const maximum = payload.find((item: any) => item.name == 'maximum');
 
   return (
     <Paper px='md' py='sm' withBorder shadow='md' radius='md'>
@@ -685,7 +685,7 @@ function InvenTreeForecastingPanel({
 }
 
 // This is the function which is called by InvenTree to render the actual panel component
-export function renderInvenTreeForecastingPanel(
+export function RenderInvenTreeForecastingPanel(
   context: InvenTreePluginContext
 ) {
   checkPluginVersion(context);

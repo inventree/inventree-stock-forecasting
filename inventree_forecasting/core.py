@@ -60,13 +60,12 @@ class InvenTreeForecasting(
 
         # Only display this panel for the 'part' target
         if allowed_user and context.get("target_model") == "part":
-
             if part_id := context.get("target_id", None):
                 try:
                     part = Part.objects.filter(id=part_id).first()
                 except Exception:
                     part = None
-                
+
                 # A valid (non-virtual) part is required
                 if part and not part.virtual:
                     panels.append({
@@ -75,7 +74,7 @@ class InvenTreeForecasting(
                         "description": _("Stock level forecasting"),
                         "icon": "ti:calendar-time:outline",
                         "source": self.plugin_static_file(
-                            "ForecastingPanel.js:renderInvenTreeForecastingPanel"
+                            "ForecastingPanel.js:RenderInvenTreeForecastingPanel"
                         ),
                         "context": {
                             # Provide additional context data to the panel

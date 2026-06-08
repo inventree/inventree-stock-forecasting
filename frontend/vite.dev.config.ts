@@ -1,49 +1,45 @@
-import { defineConfig, splitVendorChunkPlugin } from 'vite'
+// Primary vite config - we extend this for dev mode
+import { defineConfig } from 'vite'
 import { viteExternalsPlugin } from 'vite-plugin-externals'
+import InventreeHmrPlugin from '@inventreedb/ui/vite';
+import react from "@vitejs/plugin-react-swc"
+import viteConfig, { externalLibs } from './vite.config'
 
 /**
  * Vite config to run the frontend plugin in development mode.
  * 
+ * This allows the plugin developer to "live reload" their plugin code,
+ * without having to rebuild and reinstall the plugin each time.
+ * 
  * This is a very minimal config, and is not meant to be used for production builds.
  * Refer to vite.config.ts for the production build config.
  */
-export default defineConfig({
-  plugins: [
-    viteExternalsPlugin({
-      react: 'React',
-      'react-dom': 'ReactDOM',
-      'ReactDom': 'ReactDOM',
-      '@mantine/core': 'MantineCore',
-      "@mantine/notifications": 'MantineNotifications',
-    }),
-    splitVendorChunkPlugin(),
-  ],
-  build: {
-    target: 'esnext',
-    outDir: 'dist',
-    rollupOptions: {
-      output: {
-        globals: {
-          react: 'React',
-          'react-dom': 'ReactDOM',
-          '@mantine/core': 'MantineCore',
-          "@mantine/notifications": 'MantineNotifications',
-        },
-      },
-      external: [
-        'react',
-        'react-dom',
-        '@mantine/core',
-        '@mantine/notifications',
-      ],
-    }
-  },
-  server: {
-    port: 5174,  // Default port for plugins
-    strictPort: true,
-    cors: {
-      origin: '*',  // Allow all origins for development
-    }
-  },
-})
+export default defineConfig((cfg) => {
 
+  const config = {
+    ...viteConfig,
+    resolve: {},
+    server: {
+      port: 5174,  // Default port for plugins
+      strictPort: true,
+      cors: {   
+        preflightContinue: true,
+        origin: '*',  // Allow all origins for development
+      }
+    },
+  };
+  
+  // Override specific options for development
+  delete config.esbuild;
+  delete config.optimizeDeps;
+
+  config.plugins = [
+    react({
+      reactRefreshHost: 'http://localhost:5173',
+    }),
+    viteExternalsPlugin(externalLibs),
+    InventreeHmrPlugin(),
+  ];
+
+  return config;
+});

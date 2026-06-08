@@ -3,15 +3,20 @@ import react from '@vitejs/plugin-react'
 import { viteExternalsPlugin } from 'vite-plugin-externals'
 
 
-const baseRollupOptions = {
-  dir: '../inventree_forecasting/static',
-  globals: {
-    react: 'React',
-    'react-dom': 'ReactDOM',
-    '@mantine/core': 'MantineCore',
-    "@mantine/notifications": 'MantineNotifications',
-  }
+/**
+ * The following libraries are externalized to avoid bundling them with the plugin.
+ * These libraries are expected to be provided by the InvenTree core application.
+ */
+export const externalLibs : Record<string, string> = {
+  react: 'React',
+  'react-dom': 'ReactDOM',
+  'ReactDom': 'ReactDOM',
+  '@mantine/core': 'MantineCore',
+  "@mantine/notifications": 'MantineNotifications',
 };
+
+// Just the keys of the externalLibs object
+const externalKeys = Object.keys(externalLibs);
 
 /**
  * Vite config to build the frontend plugin as an exported module.
@@ -22,12 +27,7 @@ export default defineConfig({
     react({
       jsxRuntime: 'classic'
     }),
-    viteExternalsPlugin({
-      react: 'React',
-      'react-dom': 'ReactDOM',
-      '@mantine/core': 'MantineCore',
-      "@mantine/notifications": 'MantineNotifications',
-    }),
+    viteExternalsPlugin(externalLibs),
   ],
   esbuild: {
     jsx: 'preserve',
@@ -44,20 +44,22 @@ export default defineConfig({
       ],
       output: [
         {
-          ...baseRollupOptions,
+          dir: '../inventree_forecasting/static',
+          globals: externalLibs,
           entryFileNames: '[name].js',
           assetFileNames: 'assets/[name].[ext]',
         },
         {
-          ...baseRollupOptions,
+          dir: '../inventree_forecasting/static',
+          globals: externalLibs,
           entryFileNames: '[name]-[hash].min.js',
           assetFileNames: 'assets/[name].[ext]',
         }
       ],
-      external: ['react', 'react-dom', '@mantine/core', '@mantine/notifications'],
+      external: externalKeys
     }
   },
   optimizeDeps: {
-    exclude: ['react', 'react-dom', '@mantine/core', '@mantine/notifications'],
+    exclude: externalKeys,
   },
 })
