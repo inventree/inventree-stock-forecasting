@@ -447,20 +447,27 @@ class PartForecastingView(RetrieveAPI):
         observed_parts = set()
 
         # Start with the bottom level part, and work upwards through the assembly tree
-        parts_to_process = [(part, 0, 1.0)]
+        parts_to_process = [(part, 0, 1.0, [])]
 
         while parts_to_process:
-            current_part, level, multiplier = parts_to_process.pop()
+            current_part, level, multiplier, chain = parts_to_process.pop()
 
             # No further processing if we are not including upstream assemblies
             if level > 0 and not include_upstream:
                 continue
 
             # Check if we have already processed this assembly
-            if current_part.pk in observed_parts:
-                continue
+            # if current_part.pk in observed_parts:
+            #     continue
 
             observed_parts.add(current_part.pk)
+
+            print(
+                "::".join([f"{p.name}(x{q})" for p, q in chain]),
+                "->",
+                current_part.name,
+                f"(x{multiplier})",
+            )
 
             if current_part.pk not in assembly_stock:
                 # Calculate the available stock for a given assembly
@@ -488,18 +495,24 @@ class PartForecastingView(RetrieveAPI):
             )
 
             # Find any assembly parts which use this one
-            bom_items = part_models.BomItem.objects.filter(
-                current_part.get_used_in_bom_item_filter(
-                    include_variants=True, include_substitutes=False
+            bom_items = (
+                part_models.BomItem.objects.filter(
+                    current_part.get_used_in_bom_item_filter(
+                        include_variants=True, include_substitutes=False
+                    )
                 )
-            ).select_related("part")
+                .filter(part__active=True)
+                .select_related("part")
+            )
 
             for item in bom_items:
                 bom_quantity = float(item.quantity) * float(multiplier)
 
                 # If the BOM Item is inherited by variants
                 if item.inherited:
-                    parent_parts = list(item.part.get_descendants(include_self=True))
+                    parent_parts = list(
+                        item.part.get_descendants(include_self=True).filter(active=True)
+                    )
                 else:
                     parent_parts = [item.part]
 
@@ -513,6 +526,7 @@ class PartForecastingView(RetrieveAPI):
                         parent_part,
                         level + 1,
                         bom_quantity,
+                        [*chain, (current_part, float(item.quantity))],
                     ))
 
         return entries
