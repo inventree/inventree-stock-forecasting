@@ -443,9 +443,6 @@ class PartForecastingView(RetrieveAPI):
         # Keep track of the stock level for higher level assemblies
         assembly_stock = {}
 
-        # Prevent recursion
-        observed_parts = set()
-
         # Start with the bottom level part, and work upwards through the assembly tree
         parts_to_process = [(part, 0, 1.0, [])]
 
@@ -455,12 +452,6 @@ class PartForecastingView(RetrieveAPI):
             # No further processing if we are not including upstream assemblies
             if level > 0 and not include_upstream:
                 continue
-
-            # Check if we have already processed this assembly
-            # if current_part.pk in observed_parts:
-            #     continue
-
-            observed_parts.add(current_part.pk)
 
             print(
                 "::".join([f"{p.name}(x{q})" for p, q in chain]),
