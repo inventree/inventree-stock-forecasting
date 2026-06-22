@@ -507,13 +507,6 @@ class PartForecastingView(RetrieveAPI):
             if level > 0 and not include_upstream:
                 continue
 
-            print(
-                "::".join([f"{p.name}(x{q})" for p, q in chain]),
-                "->",
-                current_part.name,
-                f"(x{multiplier})",
-            )
-
             if current_part.pk not in self.assembly_stock:
                 # Calculate the available stock for a given assembly
                 # For higher level entries, account for the "in stock" quantity
