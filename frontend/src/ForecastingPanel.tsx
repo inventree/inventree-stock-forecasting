@@ -39,6 +39,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const FORECASTING_URL: string = 'plugin/stock-forecasting/forecast/';
 
+const truthyOptions = [
+  {
+    value: 'false',
+    label: 'No'
+  },
+  {
+    value: 'true',
+    label: 'Yes'
+  }
+];
+
 function ChartTooltip({ label, payload }: Readonly<ChartTooltipProps>) {
   if (!payload) {
     return null;
@@ -403,7 +414,7 @@ export function ForecastingTable({
                     'This entry has no associated date, so the quantity is speculative'
                   }
                 >
-                  <ActionIcon color='red' variant='transparent'>
+                  <ActionIcon color='red' variant='transparent' size='xs'>
                     <IconExclamationCircle />
                   </ActionIcon>
                 </Tooltip>
@@ -423,7 +434,7 @@ export function ForecastingTable({
                     'This entry is in the past, so the quantity is speculative'
                   }
                 >
-                  <ActionIcon color='red' variant='transparent'>
+                  <ActionIcon color='red' variant='transparent' size='xs'>
                     <IconExclamationCircle />
                   </ActionIcon>
                 </Tooltip>
@@ -489,10 +500,13 @@ function InvenTreeForecastingPanel({
 
   const [includeUpstream, setIncludeUpstream] = useState<boolean>(false);
 
+  const [considerIntermediateStock, setConsiderIntermediateStock] =
+    useState<boolean>(true);
+
   // Callback function to download the forecasting data
   const downloadData = useCallback(
     (format: string) => {
-      let url = `${FORECASTING_URL}?part=${context.id}&include_variants=${includeVariants}&include_upstream=${includeUpstream}&export=${format}`;
+      let url = `${FORECASTING_URL}?part=${context.id}&consider_intermediate_stock=${considerIntermediateStock}&include_variants=${includeVariants}&include_upstream=${includeUpstream}&export=${format}`;
 
       if (context.host) {
         url = `${context.host}/${url}`;
@@ -502,13 +516,25 @@ function InvenTreeForecastingPanel({
 
       window.open(url, '_blank');
     },
-    [context.host, context.id, includeVariants, includeUpstream]
+    [
+      context.host,
+      context.id,
+      includeVariants,
+      includeUpstream,
+      considerIntermediateStock
+    ]
   );
 
   const forecastingQuery = useQuery(
     {
       enabled: !!context.id,
-      queryKey: ['forecasting', context.id, includeVariants, includeUpstream],
+      queryKey: [
+        'forecasting',
+        context.id,
+        considerIntermediateStock,
+        includeVariants,
+        includeUpstream
+      ],
       refetchOnMount: true,
       refetchOnWindowFocus: false,
       queryFn: async () => {
@@ -517,7 +543,8 @@ function InvenTreeForecastingPanel({
             params: {
               part: context.id,
               include_variants: includeVariants,
-              include_upstream: includeUpstream
+              include_upstream: includeUpstream,
+              consider_intermediate_stock: considerIntermediateStock
             }
           })
           .then((response: any) => {
@@ -552,16 +579,7 @@ function InvenTreeForecastingPanel({
             <Group gap='xs' align='start'>
               <Select
                 label={'Include Variant Parts'}
-                data={[
-                  {
-                    value: 'false',
-                    label: 'No'
-                  },
-                  {
-                    value: 'true',
-                    label: 'Yes'
-                  }
-                ]}
+                data={truthyOptions}
                 value={includeVariants ? 'true' : 'false'}
                 onChange={(value) => {
                   setIncludeVariants(value === 'true');
@@ -570,19 +588,19 @@ function InvenTreeForecastingPanel({
               />
               <Select
                 label={'Include Upstream Assembly Demands'}
-                data={[
-                  {
-                    value: 'false',
-                    label: 'No'
-                  },
-                  {
-                    value: 'true',
-                    label: 'Yes'
-                  }
-                ]}
+                data={truthyOptions}
                 value={includeUpstream ? 'true' : 'false'}
                 onChange={(value) => {
                   setIncludeUpstream(value === 'true');
+                }}
+                disabled={forecastingQuery.isFetching}
+              />
+              <Select
+                label={'Consider Intermediate Stock Availability'}
+                data={truthyOptions}
+                value={considerIntermediateStock ? 'true' : 'false'}
+                onChange={(value) => {
+                  setConsiderIntermediateStock(value === 'true');
                 }}
                 disabled={forecastingQuery.isFetching}
               />

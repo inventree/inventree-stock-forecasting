@@ -1,7 +1,9 @@
 """API views for the InvenTree Forecasting plugin."""
 
 import functools
+from decimal import Decimal
 from datetime import date
+from math import prod
 from typing import Optional, cast
 
 from django.db.models import F, Model
@@ -108,16 +110,25 @@ class PartForecastingView(RetrieveAPI):
         # Do we include forecasting entries for upstream orders?
         include_upstream = bool(data.get("include_upstream", False))
 
+        # Do we account for stock availability of intermediate assemblies when calculating the forecast?
+        consider_intermediate_stock = bool(
+            data.get("consider_intermediate_stock", True)
+        )
+
+        # Generate all forecasting entries for this part
+        entries = self.get_entries(
+            part, include_variants=include_variants, include_upstream=include_upstream
+        )
+
+        if consider_intermediate_stock:
+            entries = self.post_process_entries(entries)
+
         forecasting_data = {
             "part": part.pk,
             "in_stock": part.get_stock_count(include_variants=include_variants),
             "min_stock": getattr(part, "minimum_stock", 0),
             "max_stock": getattr(part, "maximum_stock", 0),
-            "entries": self.get_entries(
-                part,
-                include_variants=include_variants,
-                include_upstream=include_upstream,
-            ),
+            "entries": entries,
         }
 
         response_serializer = self.serializer_class(data=forecasting_data)
@@ -133,6 +144,58 @@ class PartForecastingView(RetrieveAPI):
             )
 
         return Response(response_serializer.data, status=200)
+
+    def post_process_entries(self, entries: list) -> list:
+        """Post-process the list of forecasting entries before returning to the user.
+
+        At this point, the entries are sorted (by date),
+        and we also have a complete picture of the stock availability of any intermediate assemblies
+        """
+
+        for idx, entry in enumerate(entries):
+            quantity = entry.get("quantity", 0)
+
+            if quantity >= 0:
+                # Positive quantity values can be ignored for post-processing
+                continue
+
+            chain = entry.get("chain")
+
+            if not chain or len(chain) <= 1:
+                continue
+
+            # Work out the total chain multiplier for this entry
+            chain_multiplier = prod([q for p, q in chain])
+
+            if chain_multiplier <= 0:
+                # Defensive check - this should not happen, but we want to avoid any potential issues with zero or negative multipliers
+                continue
+
+            # Start with the raw quantity required for the entry
+            quantity = Decimal(quantity) / Decimal(chain_multiplier)
+
+            # For a "chained" entry we iterate backwards down the chain, and offset the quantity by the available stock at each level
+            for part, qty in reversed(chain):
+                # How much intermediate stock is available?
+                available = self.assembly_stock.get(part.pk, 0)
+
+                # Offset the quantity by the available stock
+                offset = min(available, -1 * quantity)
+                self.assembly_stock[part.pk] = available - offset
+                quantity += Decimal(offset)
+
+                if quantity >= 0:
+                    # If the quantity has been fully offset by available stock, we can stop processing this entry
+                    quantity = 0
+                    break
+                else:
+                    quantity *= Decimal(qty)
+
+            # Update the entry with the post-processed quantity
+            entry["quantity"] = quantity
+
+        # Return ONLY entries with a non-zero quantity
+        return [entry for entry in entries if entry.get("quantity", 0) != 0]
 
     def get_entries(
         self,
@@ -186,6 +249,7 @@ class PartForecastingView(RetrieveAPI):
         part: Optional[part_models.Part] = None,
         title: str = "",
         multiplier: float = 1.0,
+        chain: Optional[list] = None,
     ):
         """Generate a forecasting entry for a part.
 
@@ -210,6 +274,7 @@ class PartForecastingView(RetrieveAPI):
             "model_type": instance.__class__.__name__.lower(),
             "model_id": instance.pk,
             "part": part,
+            "chain": chain,
         }
 
     def generate_purchase_order_entries(
@@ -249,6 +314,7 @@ class PartForecastingView(RetrieveAPI):
                         line.order,
                         quantity,
                         target_date,
+                        chain=None,
                         part=line.part.part if line.part and line.part.part else None,
                         title=_("Incoming Purchase Order"),
                     )
@@ -261,15 +327,14 @@ class PartForecastingView(RetrieveAPI):
         part: part_models.Part,
         include_variants: bool,
         multiplier: float = 1.0,
-        assembly_stock: Optional[dict] = None,
+        chain: Optional[list] = None,
     ) -> list:
         """Generate forecasting entries for sales orders related to the part.
 
         Arguments:
             part (part_models.Part): The part for which to generate entries.
             include_variants (bool): Whether to include variant parts in the stock count.
-            multiplier (float): A multiplier to apply to the quantity (e.g., to account for
-            assembly_stock: A dictionary mapping part PKs to their current stock level, to allow "offsetting" of sales order requirements based on available stock.
+            multiplier (float): A multiplier to apply to the quantity (e.g., to account for higher level assemblies).
         """
         entries = []
 
@@ -293,14 +358,6 @@ class PartForecastingView(RetrieveAPI):
             # The outstanding quantity which will be required
             outstanding = max(0, line.quantity - line.shipped)
 
-            # If this is a higher level assembly, we can reduce the outstanding requirement, based on the available stock for this assembly
-            if assembly_stock:
-                available = assembly_stock.get(part.pk, 0)
-                adjustment = min(available, outstanding)
-                assembly_stock[line.part.pk] = available - adjustment
-                outstanding -= adjustment
-                outstanding = max(0, outstanding)
-
             if abs(outstanding) > 0:
                 entries.append(
                     self.generate_entry(
@@ -310,6 +367,7 @@ class PartForecastingView(RetrieveAPI):
                         title=_("Outgoing Sales Order"),
                         multiplier=multiplier,
                         part=line.part,
+                        chain=chain,
                     )
                 )
 
@@ -349,6 +407,7 @@ class PartForecastingView(RetrieveAPI):
                         build.target_date,
                         part=build.part,
                         title=_("Assembled via Build Order"),
+                        chain=None,
                     )
                 )
 
@@ -359,7 +418,7 @@ class PartForecastingView(RetrieveAPI):
         part: part_models.Part,
         include_variants: bool,
         multiplier: float = 1.0,
-        assembly_stock: Optional[dict] = None,
+        chain: Optional[list] = None,
     ) -> list:
         """Generate forecasting entries for build order allocations related to the part.
 
@@ -368,8 +427,8 @@ class PartForecastingView(RetrieveAPI):
         Arguments:
             part (part_models.Part): The part for which to generate entries.
             include_variants (bool): Whether to include variant parts in the stock count.
-            multiplier (float): A multiplier to apply to the required quantity (e.g., to account for higher level assemblies)
-            assembly_stock (dict): A dictionary mapping part PKs to their current stock level, to allow "offsetting" of build order requirements based on available stock.
+            multiplier (float): A multiplier to apply to the required quantity (e.g., to account for higher level assemblies).
+            chain: Optional list of parent assemblies and their quantities, used to provide context for the entry.
 
         Here we need some careful consideration:
 
@@ -404,14 +463,6 @@ class PartForecastingView(RetrieveAPI):
         for line in lines:
             remaining = max(0, line.quantity - line.consumed)
 
-            # If this is a higher level assembly, we can reduce the required quantity, based on the available stock for this assembly
-            if assembly_stock:
-                available = assembly_stock.get(part.pk, 0)
-                adjustment = min(available, remaining)
-                assembly_stock[line.part.pk] = available - adjustment
-                remaining -= adjustment
-                remaining = max(0, remaining)
-
             if remaining > 0:
                 entries.append(
                     self.generate_entry(
@@ -421,6 +472,7 @@ class PartForecastingView(RetrieveAPI):
                         title=_("Required for Build Order"),
                         part=line.bom_item.part,
                         multiplier=multiplier,
+                        chain=chain,
                     )
                 )
 
@@ -440,43 +492,43 @@ class PartForecastingView(RetrieveAPI):
 
         entries = []
 
-        # Keep track of the stock level for higher level assemblies
-        assembly_stock = {}
-
-        # Prevent recursion
-        observed_parts = set()
+        # Available stock for each intermediate assembly, used to offset demand.
+        # Initialized here so generate_sales_order_entries and
+        # generate_build_order_allocations can read/write it via self.
+        self.assembly_stock = {}
 
         # Start with the bottom level part, and work upwards through the assembly tree
-        parts_to_process = [(part, 0, 1.0)]
+        parts_to_process = [(part, 0, 1.0, [])]
 
         while parts_to_process:
-            current_part, level, multiplier = parts_to_process.pop()
+            current_part, level, multiplier, chain = parts_to_process.pop()
 
             # No further processing if we are not including upstream assemblies
             if level > 0 and not include_upstream:
                 continue
 
-            # Check if we have already processed this assembly
-            if current_part.pk in observed_parts:
-                continue
+            print(
+                "::".join([f"{p.name}(x{q})" for p, q in chain]),
+                "->",
+                current_part.name,
+                f"(x{multiplier})",
+            )
 
-            observed_parts.add(current_part.pk)
-
-            if current_part.pk not in assembly_stock:
+            if current_part.pk not in self.assembly_stock:
                 # Calculate the available stock for a given assembly
                 # For higher level entries, account for the "in stock" quantity
                 # This includes stock on order, or being built
                 in_stock = current_part.get_stock_count(include_variants=False)
                 in_stock += current_part.on_order
                 in_stock += current_part.quantity_being_built
-                assembly_stock[current_part.pk] = in_stock
+                self.assembly_stock[current_part.pk] = in_stock
 
             # Add sales order requirements for this particular part
             entries += self.generate_sales_order_entries(
                 current_part,
                 include_variants,
                 multiplier=multiplier,
-                assembly_stock=assembly_stock if level > 0 else None,
+                chain=chain,
             )
 
             # Add build order requirements for this particular part
@@ -484,22 +536,28 @@ class PartForecastingView(RetrieveAPI):
                 current_part,
                 include_variants,
                 multiplier=multiplier,
-                assembly_stock=assembly_stock if level > 0 else None,
+                chain=chain,
             )
 
             # Find any assembly parts which use this one
-            bom_items = part_models.BomItem.objects.filter(
-                current_part.get_used_in_bom_item_filter(
-                    include_variants=True, include_substitutes=False
+            bom_items = (
+                part_models.BomItem.objects.filter(
+                    current_part.get_used_in_bom_item_filter(
+                        include_variants=True, include_substitutes=False
+                    )
                 )
-            ).select_related("part")
+                .filter(part__active=True)
+                .select_related("part")
+            )
 
             for item in bom_items:
                 bom_quantity = float(item.quantity) * float(multiplier)
 
                 # If the BOM Item is inherited by variants
                 if item.inherited:
-                    parent_parts = list(item.part.get_descendants(include_self=True))
+                    parent_parts = list(
+                        item.part.get_descendants(include_self=True).filter(active=True)
+                    )
                 else:
                     parent_parts = [item.part]
 
@@ -513,6 +571,7 @@ class PartForecastingView(RetrieveAPI):
                         parent_part,
                         level + 1,
                         bom_quantity,
+                        [*chain, (current_part, float(item.quantity))],
                     ))
 
         return entries
