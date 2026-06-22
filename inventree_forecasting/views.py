@@ -226,7 +226,7 @@ class PartForecastingView(RetrieveAPI):
         # Find all open purchase order line items
         po_lines = order_models.PurchaseOrderLineItem.objects.filter(
             order__status__in=order_status.PurchaseOrderStatusGroups.OPEN,
-        )
+        ).prefetch_related("order")
 
         if include_variants:
             # Filter lines to include any variants of the provided part
@@ -257,7 +257,11 @@ class PartForecastingView(RetrieveAPI):
         return entries
 
     def generate_sales_order_entries(
-        self, part: part_models.Part, include_variants: bool, multiplier: float = 1.0, assembly_stock: Optional[dict] = None
+        self,
+        part: part_models.Part,
+        include_variants: bool,
+        multiplier: float = 1.0,
+        assembly_stock: Optional[dict] = None,
     ) -> list:
         """Generate forecasting entries for sales orders related to the part.
 
@@ -272,7 +276,7 @@ class PartForecastingView(RetrieveAPI):
         # Find all open sales order line items
         so_lines = order_models.SalesOrderLineItem.objects.filter(
             order__status__in=order_status.SalesOrderStatusGroups.OPEN
-        )
+        ).prefetch_related("order")
 
         if include_variants:
             # Filter lines to include any variants of the provided part
@@ -324,7 +328,7 @@ class PartForecastingView(RetrieveAPI):
         # Find all open build orders
         build_orders = build_models.Build.objects.filter(
             status__in=build_status.BuildStatusGroups.ACTIVE_CODES
-        )
+        ).prefetch_related("build")
 
         if include_variants:
             # Filter builds to include any variants of the provided part
@@ -351,7 +355,11 @@ class PartForecastingView(RetrieveAPI):
         return entries
 
     def generate_build_order_allocations(
-        self, part: part_models.Part, include_variants: bool, multiplier: float = 1.0, assembly_stock: Optional[dict] = None
+        self,
+        part: part_models.Part,
+        include_variants: bool,
+        multiplier: float = 1.0,
+        assembly_stock: Optional[dict] = None,
     ) -> list:
         """Generate forecasting entries for build order allocations related to the part.
 
@@ -362,7 +370,7 @@ class PartForecastingView(RetrieveAPI):
             include_variants (bool): Whether to include variant parts in the stock count.
             multiplier (float): A multiplier to apply to the required quantity (e.g., to account for higher level assemblies)
             assembly_stock (dict): A dictionary mapping part PKs to their current stock level, to allow "offsetting" of build order requirements based on available stock.
-            
+
         Here we need some careful consideration:
 
         - 'Tracked' stock items are removed from stock when the individual Build Output is completed
@@ -392,6 +400,7 @@ class PartForecastingView(RetrieveAPI):
             build__status__in=build_status.BuildStatusGroups.ACTIVE_CODES,
             consumed__lt=F("quantity"),
         ).select_related("bom_item", "build", "bom_item__part")
+
         for line in lines:
             remaining = max(0, line.quantity - line.consumed)
 
@@ -464,12 +473,18 @@ class PartForecastingView(RetrieveAPI):
 
             # Add sales order requirements for this particular part
             entries += self.generate_sales_order_entries(
-                current_part, include_variants, multiplier=multiplier, assembly_stock=assembly_stock if level > 0 else None
+                current_part,
+                include_variants,
+                multiplier=multiplier,
+                assembly_stock=assembly_stock if level > 0 else None,
             )
 
             # Add build order requirements for this particular part
             entries += self.generate_build_order_allocations(
-                current_part, include_variants, multiplier=multiplier, assembly_stock=assembly_stock if level > 0 else None
+                current_part,
+                include_variants,
+                multiplier=multiplier,
+                assembly_stock=assembly_stock if level > 0 else None,
             )
 
             # Find any assembly parts which use this one
@@ -490,7 +505,6 @@ class PartForecastingView(RetrieveAPI):
 
                 # Add this assembly to the list of parts to process
                 for parent_part in parent_parts:
-
                     # Skip inactive parts
                     if not parent_part.active:
                         continue
