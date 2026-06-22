@@ -226,7 +226,7 @@ class PartForecastingView(RetrieveAPI):
         # Find all open purchase order line items
         po_lines = order_models.PurchaseOrderLineItem.objects.filter(
             order__status__in=order_status.PurchaseOrderStatusGroups.OPEN,
-        ).prefetch_related("order")
+        ).select_related("order", "part", "part__part")
 
         if include_variants:
             # Filter lines to include any variants of the provided part
@@ -276,7 +276,7 @@ class PartForecastingView(RetrieveAPI):
         # Find all open sales order line items
         so_lines = order_models.SalesOrderLineItem.objects.filter(
             order__status__in=order_status.SalesOrderStatusGroups.OPEN
-        ).prefetch_related("order")
+        ).select_related("order", "part")
 
         if include_variants:
             # Filter lines to include any variants of the provided part
@@ -328,7 +328,7 @@ class PartForecastingView(RetrieveAPI):
         # Find all open build orders
         build_orders = build_models.Build.objects.filter(
             status__in=build_status.BuildStatusGroups.ACTIVE_CODES
-        ).prefetch_related("build")
+        ).select_related("part")
 
         if include_variants:
             # Filter builds to include any variants of the provided part
@@ -399,7 +399,7 @@ class PartForecastingView(RetrieveAPI):
             bom_item__sub_part__in=parts,
             build__status__in=build_status.BuildStatusGroups.ACTIVE_CODES,
             consumed__lt=F("quantity"),
-        ).select_related("bom_item", "build", "bom_item__part")
+        ).select_related("build", "bom_item", "bom_item__part")
 
         for line in lines:
             remaining = max(0, line.quantity - line.consumed)
@@ -492,7 +492,7 @@ class PartForecastingView(RetrieveAPI):
                 current_part.get_used_in_bom_item_filter(
                     include_variants=True, include_substitutes=False
                 )
-            )
+            ).select_related("part")
 
             for item in bom_items:
                 bom_quantity = float(item.quantity) * float(multiplier)
