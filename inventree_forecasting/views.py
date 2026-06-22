@@ -200,7 +200,7 @@ class PartForecastingView(RetrieveAPI):
 
         # If a part is provided, serialize it for inclusion in the entry
         if part:
-            part = part_serializers.PartBriefSerializer(part).data
+            part = part_serializers.PartBriefSerializer(part, pricing=False).data
 
         return {
             "date": date,
