@@ -506,7 +506,7 @@ function InvenTreeForecastingPanel({
   // Callback function to download the forecasting data
   const downloadData = useCallback(
     (format: string) => {
-      let url = `${FORECASTING_URL}?part=${context.id}&include_variants=${includeVariants}&include_upstream=${includeUpstream}&export=${format}`;
+      let url = `${FORECASTING_URL}?part=${context.id}&consider_intermediate_stock=${considerIntermediateStock}&include_variants=${includeVariants}&include_upstream=${includeUpstream}&export=${format}`;
 
       if (context.host) {
         url = `${context.host}/${url}`;
@@ -516,7 +516,13 @@ function InvenTreeForecastingPanel({
 
       window.open(url, '_blank');
     },
-    [context.host, context.id, includeVariants, includeUpstream]
+    [
+      context.host,
+      context.id,
+      includeVariants,
+      includeUpstream,
+      considerIntermediateStock
+    ]
   );
 
   const forecastingQuery = useQuery(
