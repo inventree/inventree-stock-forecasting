@@ -110,14 +110,18 @@ class PartForecastingView(RetrieveAPI):
         # Do we include forecasting entries for upstream orders?
         include_upstream = bool(data.get("include_upstream", False))
 
-        # Generate all forecasting entries for this part
-        entries = self.get_entries(
-            part,
-            include_variants=include_variants,
-            include_upstream=include_upstream,
+        # Do we account for stock availability of intermediate assemblies when calculating the forecast?
+        consider_intermediate_stock = bool(
+            data.get("consider_intermediate_stock", True)
         )
 
-        entries = self.post_process_entries(entries)
+        # Generate all forecasting entries for this part
+        entries = self.get_entries(
+            part, include_variants=include_variants, include_upstream=include_upstream
+        )
+
+        if consider_intermediate_stock:
+            entries = self.post_process_entries(entries)
 
         forecasting_data = {
             "part": part.pk,

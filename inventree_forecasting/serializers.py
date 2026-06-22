@@ -24,6 +24,10 @@ class PartForecastingRequestSerializer(serializers.Serializer):
 
     include_upstream = serializers.BooleanField(required=False, default=False)
 
+    consider_intermediate_stock = serializers.BooleanField(
+        required=False, default=True, label=_("Consider Intermediate Stock")
+    )
+
     export = serializers.ChoiceField(
         choices=[(choice, choice) for choice in ["csv", "tsv", "xls", "xlsx"]],
         required=False,
