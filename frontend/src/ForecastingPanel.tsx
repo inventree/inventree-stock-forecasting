@@ -448,14 +448,14 @@ export function ForecastingTable({
           return (
             <Text>
               {prefix}
-              {record.quantity}
+              {formatDecimal(record.quantity)}
             </Text>
           );
         },
         footer: (
           <Text fw='bold'>
             Total: {totalQuantity > 0 && '+'}
-            {totalQuantity}
+            {formatDecimal(totalQuantity)}
           </Text>
         )
       }
