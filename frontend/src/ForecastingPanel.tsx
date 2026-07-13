@@ -299,7 +299,7 @@ export function ForecastingTable({
 
   const totalQuantity: number = useMemo(() => {
     return (
-      initialQuantity + 
+      initialQuantity +
       entries.reduce((sum, entry) => sum + parseFloat(entry.quantity), 0)
     );
   }, [entries]);
@@ -344,7 +344,6 @@ export function ForecastingTable({
       },
       ...sortedEntries
     ]);
-
   }, [entries, sortStatus]);
 
   const columns = useMemo(() => {
