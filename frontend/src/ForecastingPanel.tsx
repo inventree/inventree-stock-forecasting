@@ -298,7 +298,10 @@ export function ForecastingTable({
   const [records, setRecords] = useState<any[]>([]);
 
   const totalQuantity: number = useMemo(() => {
-    return initialQuantity + entries.reduce((sum, entry) => sum + parseFloat(entry.quantity), 0);
+    return (
+      initialQuantity + 
+      entries.reduce((sum, entry) => sum + parseFloat(entry.quantity), 0)
+    );
   }, [entries]);
 
   useEffect(() => {
