@@ -281,9 +281,11 @@ export function ForecastingChart({
 }
 
 export function ForecastingTable({
+  initialQuantity,
   entries,
   context
 }: {
+  initialQuantity: number;
   entries: any[];
   context: InvenTreePluginContext;
 }) {
@@ -296,7 +298,7 @@ export function ForecastingTable({
   const [records, setRecords] = useState<any[]>([]);
 
   const totalQuantity: number = useMemo(() => {
-    return entries.reduce((sum, entry) => sum + parseFloat(entry.quantity), 0);
+    return initialQuantity + entries.reduce((sum, entry) => sum + parseFloat(entry.quantity), 0);
   }, [entries]);
 
   useEffect(() => {
@@ -326,7 +328,20 @@ export function ForecastingTable({
       });
     }
 
-    setRecords(sortedEntries);
+    // Add a leading entry for the current stock level @ today
+    setRecords([
+      {
+        label: 'Current Stock',
+        part: null,
+        model_type: null,
+        model_id: null,
+        title: 'Current Stock Level',
+        date: dayjs().format('YYYY-MM-DD'),
+        quantity: initialQuantity
+      },
+      ...sortedEntries
+    ]);
+
   }, [entries, sortStatus]);
 
   const columns = useMemo(() => {
@@ -401,7 +416,7 @@ export function ForecastingTable({
         accessor: 'date',
         title: 'Date',
         sortable: true,
-        render: (record: any) => {
+        render: (record: any, index: number) => {
           // No date specified
           if (!record.date) {
             return (
@@ -423,7 +438,7 @@ export function ForecastingTable({
           }
 
           // Date is specified, but in the past
-          if (dayjs(record.date).isBefore(today)) {
+          if (index > 0 && dayjs(record.date).isBefore(today)) {
             return (
               <Group gap='xs' justify='space-between'>
                 <Text c='red' fs='italic'>
@@ -679,6 +694,7 @@ function InvenTreeForecastingPanel({
               <Accordion.Panel>
                 <Stack gap='xs'>
                   <ForecastingTable
+                    initialQuantity={forecastingQuery.data?.in_stock ?? 0}
                     entries={forecastingQuery.data?.entries ?? []}
                     context={context}
                   />
