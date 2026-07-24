@@ -1,9 +1,8 @@
 """API serializers for the InvenTree Forecasting plugin."""
 
 from django.utils.translation import gettext_lazy as _
-
-from rest_framework import serializers
 from part.models import Part
+from rest_framework import serializers
 
 
 class PartForecastingRequestSerializer(serializers.Serializer):

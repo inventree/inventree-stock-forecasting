@@ -2,7 +2,6 @@
 
 from django.contrib.auth.models import Group
 from django.utils.translation import gettext_lazy as _
-
 from plugin import InvenTreePlugin
 from plugin.mixins import SettingsMixin, UrlsMixin, UserInterfaceMixin
 

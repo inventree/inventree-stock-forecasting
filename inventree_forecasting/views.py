@@ -2,16 +2,13 @@
 
 from typing import cast
 
-from django.utils.translation import gettext_lazy as _
-
-import tablib
-
-from rest_framework import permissions
-from rest_framework.response import Response
-
 import part.models as part_models
+import tablib
+from django.utils.translation import gettext_lazy as _
 from InvenTree.helpers import DownloadFile
 from InvenTree.mixins import RetrieveAPI
+from rest_framework import permissions
+from rest_framework.response import Response
 
 from .forecast import PartForecast
 from .serializers import PartForecastingRequestSerializer, PartForecastingSerializer

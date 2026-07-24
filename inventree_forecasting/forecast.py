@@ -1,13 +1,9 @@
 """Core forecasting calculation logic for the InvenTree Forecasting plugin."""
 
 import functools
-from decimal import Decimal
 from datetime import date
+from decimal import Decimal
 from math import prod
-from typing import Optional
-
-from django.db.models import F, Model
-from django.utils.translation import gettext_lazy as _
 
 import build.models as build_models
 import build.status_codes as build_status
@@ -15,6 +11,8 @@ import order.models as order_models
 import order.status_codes as order_status
 import part.models as part_models
 import part.serializers as part_serializers
+from django.db.models import F, Model
+from django.utils.translation import gettext_lazy as _
 
 
 class PartForecast:
@@ -124,11 +122,11 @@ class PartForecast:
         self,
         instance: Model,
         quantity: float,
-        date: Optional[date] = None,
-        part: Optional[part_models.Part] = None,
+        date: date | None = None,
+        part: part_models.Part | None = None,
         title: str = "",
         multiplier: float = 1.0,
-        chain: Optional[list] = None,
+        chain: list | None = None,
     ):
         """Generate a forecasting entry for a part.
 
@@ -206,7 +204,7 @@ class PartForecast:
         part: part_models.Part,
         include_variants: bool,
         multiplier: float = 1.0,
-        chain: Optional[list] = None,
+        chain: list | None = None,
     ) -> list:
         """Generate forecasting entries for sales orders related to the part.
 
@@ -297,7 +295,7 @@ class PartForecast:
         part: part_models.Part,
         include_variants: bool,
         multiplier: float = 1.0,
-        chain: Optional[list] = None,
+        chain: list | None = None,
     ) -> list:
         """Generate forecasting entries for build order allocations related to the part.
 
