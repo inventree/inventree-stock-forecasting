@@ -32,7 +32,6 @@ jobs:
 
   integration-tests:
     name: "Integration tests (${{ matrix.inventree-tag }})"
-    needs: ci
     runs-on: ubuntu-latest
 
     strategy:
