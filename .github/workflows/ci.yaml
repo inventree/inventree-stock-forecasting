@@ -3,7 +3,11 @@
 
 name: CI Checks
 
-on: ["push", "pull_request"]
+on:
+  push:
+  pull_request:
+  schedule: # run every week to catch upstream InvenTree breakage
+    - cron: "0 12 * * 6"
 
 jobs:
   ci:
@@ -25,7 +29,63 @@ jobs:
       - name: Build Plugin
         run: |
           python -m build
-  
+
+  integration-tests:
+    name: "Integration tests (${{ matrix.inventree-tag }})"
+    needs: ci
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        inventree-tag: [stable, latest]
+
+    container:
+      image: inventree/inventree:${{ matrix.inventree-tag }}
+      options: --user root
+      env:
+        INVENTREE_DB_ENGINE: postgresql
+        INVENTREE_DB_NAME: inventree
+        INVENTREE_DB_HOST: db
+        INVENTREE_DB_PORT: 5432
+        INVENTREE_DB_USER: inventree
+        INVENTREE_DB_PASSWORD: inventree
+        INVENTREE_PLUGINS_ENABLED: True
+        INVENTREE_PLUGINS_MANDATORY: stock-forecasting
+        INVENTREE_PLUGIN_TESTING: True
+        INVENTREE_PLUGIN_TESTING_SETUP: True
+        INVENTREE_SITE_URL: http://localhost:8000
+
+    services:
+      db:
+        image: postgres:17
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: inventree
+          POSTGRES_PASSWORD: inventree
+          POSTGRES_DB: inventree
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+
+      - name: Setup InvenTree
+        run: |
+          cd /home/inventree
+          HOME=/root invoke update
+
+      - name: Install Plugin
+        run: |
+          cd /home/inventree
+          HOME=/root pip3 install -e $GITHUB_WORKSPACE
+          HOME=/root invoke migrate
+
+      - name: Run Tests
+        run: |
+          cd /home/inventree/src/backend
+          HOME=/root python InvenTree/manage.py test inventree_forecasting.tests
+
   frontend:
     runs-on: ubuntu-latest
     steps:
