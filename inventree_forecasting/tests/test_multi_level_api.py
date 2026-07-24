@@ -6,14 +6,17 @@ from the real `/plugin/stock-forecasting/forecast/` API endpoint (with
 *independently computed* set of expected entries, derived directly from the
 fixture's known BOM/order structure rather than by calling into `PartForecast`.
 
-Scope decision: comparisons are made with `consider_intermediate_stock=false`.
-The stock-offset behaviour of `post_process_entries` already has focused,
-hand-verified unit test coverage in `test_forecasting.py`; replicating that
-stateful, order-dependent offset logic as a second independent oracle across a
-four-tier diamond graph with dozens of orders would be both impractical and
-itself error-prone. This module instead focuses on the part that's hardest to
-get right by hand: BOM tree traversal, multiplier compounding, and diamond/
-orphan handling.
+Two layers are tested, both against the same underlying "raw" oracle entries:
+
+- `MultiLevelAPITestCase` - `consider_intermediate_stock=false`. Stress-tests the
+  part that's hardest to get right by hand: BOM tree traversal, multiplier
+  compounding, and diamond/orphan handling.
+- `MultiLevelStockOffsetAPITestCase` - `consider_intermediate_stock=true` (the
+  default). On top of the above, independently replicates the stock-offset
+  post-processing step (`post_process_entries`): for each negative entry with a
+  multi-level chain, walk the chain and offset against each level's available
+  stock (`get_stock_count() + on_order + quantity_being_built`), exactly as
+  documented in `forecast.py`.
 
 Oracle semantics (matching the documented behaviour in `forecast.py`):
 
@@ -26,9 +29,30 @@ Oracle semantics (matching the documented behaviour in `forecast.py`):
   and N2) is visited once per path, each contributing its own
   multiplier-scaled entries - by design, not a bug: the total demand for a
   shared component is the sum across all paths that lead to it.
+- Stock availability at each part is memoized the first time it's visited
+  during the upstream walk (matching `self.assembly_stock`'s memoization), and
+  is shared/decremented across every entry that draws on it, in date order.
 
 This module intentionally does NOT fix any backend issues it finds - it only
 surfaces them. See the test docstrings/comments for anything discovered.
+
+Known finding - `MultiLevelStockOffsetAPITestCase` (not a backend bug): three
+parts (Component 2, Component 3, Sub-Assembly 2/M2) show quantity mismatches on
+specific same-date entries that compete for stock at a diamond-shared part
+(M2, used by both N1 and N2). Diagnosed by feeding this module's own
+`_apply_stock_offset` the *real* code's raw entries, in the *real* code's
+insertion order, with the *real* code's initial stock - it reproduced the real
+API's output exactly. That confirms the offset math here is correct; the
+mismatch is purely because `post_process_entries` breaks same-date ties by
+insertion order, and this module's plain-recursion BOM walk visits nodes in a
+different order than the real code's stack-based (LIFO) traversal. Matching
+that order exactly would mean reimplementing the same traversal, which
+defeats the point of an independent oracle. Net effect worth knowing about:
+when two same-date entries compete for a limited, shared stock pool at a
+diamond-shared part, which one "wins" the stock is an implementation-order
+artifact, not a deliberate tie-break rule - the total demand is still correct,
+just its date-by-date split against shared stock isn't fully deterministic
+from the fixture data alone.
 """
 
 from collections import defaultdict
@@ -61,59 +85,82 @@ def _normalize_date(value):
     return value.isoformat()
 
 
-class MultiLevelAPITestCase(MultiLevelBOMTestCase, InvenTreeAPITestCase):
-    """Combines the multi-level BOM fixture with API test helpers."""
+def _bucket(entries):
+    """Collapse a flat entry list into {(model_type, model_id, date): [quantity, ...]}."""
+    buckets = defaultdict(list)
+    for entry in entries:
+        if entry['quantity']:
+            key = (entry['model_type'], entry['model_id'], _normalize_date(entry['date']))
+            buckets[key].append(round(entry['quantity'], ROUND_PLACES))
+    return buckets
 
-    def setUp(self):
-        super().setUp()
-        self.url = reverse('plugin:stock-forecasting:part-forecasting')
-        self.query_counts = {}
 
-    # -- Independent oracle -------------------------------------------------
+class RawOracleMixin:
+    """Independently computes raw (pre-offset) forecasting entries for a part,
+    preserving each entry's BOM "chain" so stock-offset post-processing can be
+    layered on top independently too.
+    """
 
-    def _expected_entries(self, part):
-        """Independently compute expected (pre-offset) forecasting entries for `part`.
+    def _raw_entries_and_stock(self, part):
+        """Returns (entries, assembly_stock).
 
-        Returns a dict of {(model_type, model_id, date): [quantity, ...]}.
+        entries: list of {model_type, model_id, date, quantity, chain} dicts.
+        chain is None for level-0-only purchase/build entries (never offset),
+        or a list of (Part, multiplier) pairs from `part` up to the entry's
+        source, for sales-order/build-allocation entries at any tier.
+
+        assembly_stock: {part_pk: available_stock} for every part visited
+        during the upstream walk, computed once per part (memoized), matching
+        `generate_upstream_entries`'s `self.assembly_stock` population.
         """
-        buckets = defaultdict(list)
-
-        def add(model_type, model_id, date, quantity):
-            if quantity:
-                key = (model_type, model_id, _normalize_date(date))
-                buckets[key].append(round(quantity, ROUND_PLACES))
+        entries = []
+        assembly_stock = {}
 
         # Purchase orders for `part` itself only (never for upstream ancestors)
         for line in PurchaseOrderLineItem.objects.filter(
             part__part=part, order__status__in=PurchaseOrderStatusGroups.OPEN
         ):
-            qty = line.part.base_quantity(max(0, line.quantity - line.received))
-            add(
-                'purchaseorder', line.order.pk,
-                line.target_date or line.order.target_date,
-                float(qty),
-            )
+            qty = float(line.part.base_quantity(max(0, line.quantity - line.received)))
+            if qty:
+                entries.append({
+                    'model_type': 'purchaseorder', 'model_id': line.order.pk,
+                    'date': line.target_date or line.order.target_date,
+                    'quantity': qty, 'chain': None,
+                })
 
         # Build orders where `part` itself is being built - only for `part`
         for build in Build.objects.filter(
             part=part, status__in=BuildStatusGroups.ACTIVE_CODES
         ):
-            qty = max(0, build.quantity - build.completed)
-            add('build', build.pk, build.target_date, float(qty))
+            qty = float(max(0, build.quantity - build.completed))
+            if qty:
+                entries.append({
+                    'model_type': 'build', 'model_id': build.pk,
+                    'date': build.target_date, 'quantity': qty, 'chain': None,
+                })
 
         # Walk upward from `part`, visiting every ancestor via every distinct
         # BOM path (no de-duplication - a shared component contributes once
         # per path, matching the documented "sum across paths" semantics).
-        def walk(current, multiplier):
+        def walk(current, multiplier, chain):
+            chain = [*chain, (current, multiplier)]
+
+            if current.pk not in assembly_stock:
+                in_stock = current.get_stock_count(include_variants=False)
+                assembly_stock[current.pk] = float(
+                    in_stock + current.on_order + current.quantity_being_built
+                )
+
             for line in SalesOrderLineItem.objects.filter(
                 part=current, order__status__in=SalesOrderStatusGroups.OPEN
             ):
                 outstanding = float(max(0, line.quantity - line.shipped))
-                add(
-                    'salesorder', line.order.pk,
-                    line.target_date or line.order.target_date,
-                    -outstanding * multiplier,
-                )
+                if outstanding:
+                    entries.append({
+                        'model_type': 'salesorder', 'model_id': line.order.pk,
+                        'date': line.target_date or line.order.target_date,
+                        'quantity': -outstanding * multiplier, 'chain': chain,
+                    })
 
             for bl in BuildLine.objects.filter(
                 bom_item__sub_part=current,
@@ -121,22 +168,88 @@ class MultiLevelAPITestCase(MultiLevelBOMTestCase, InvenTreeAPITestCase):
                 consumed__lt=F('quantity'),
             ).select_related('build'):
                 remaining = float(max(0, bl.quantity - bl.consumed))
-                add(
-                    'build', bl.build.pk,
-                    bl.build.start_date or bl.build.target_date,
-                    -remaining * multiplier,
-                )
+                if remaining:
+                    entries.append({
+                        'model_type': 'build', 'model_id': bl.build.pk,
+                        'date': bl.build.start_date or bl.build.target_date,
+                        'quantity': -remaining * multiplier, 'chain': chain,
+                    })
 
             for bom_item in BomItem.objects.filter(sub_part=current):
-                walk(bom_item.part, multiplier * float(bom_item.quantity))
+                walk(bom_item.part, multiplier * float(bom_item.quantity), chain)
 
-        walk(part, 1.0)
+        walk(part, 1.0, [])
 
-        return buckets
+        return entries, assembly_stock
 
-    # -- API fetch ------------------------------------------------------
+    def _expected_entries(self, part):
+        """Bucketed raw (pre-offset) expected entries for `part`."""
+        entries, _ = self._raw_entries_and_stock(part)
+        return _bucket(entries)
 
-    def _actual_entries(self, part):
+    def _expected_entries_with_stock_offset(self, part):
+        """Bucketed expected entries for `part`, after applying the independent
+        stock-offset post-processing step.
+        """
+        entries, assembly_stock = self._raw_entries_and_stock(part)
+        offset_entries = self._apply_stock_offset(entries, assembly_stock)
+        return _bucket(offset_entries)
+
+    def _apply_stock_offset(self, entries, assembly_stock):
+        """Independently apply stock-offset post-processing, matching the documented
+        behaviour of `post_process_entries`: entries are processed in date order;
+        a negative entry with a multi-level chain is offset against each chain
+        level's available stock (consumed sequentially, shared across entries).
+        """
+        assembly_stock = dict(assembly_stock)  # local mutable copy
+        result = []
+
+        def sort_key(entry):
+            date = entry['date']
+            return (date is None, date)
+
+        for entry in sorted(entries, key=sort_key):
+            quantity = entry['quantity']
+            chain = entry['chain']
+
+            if quantity >= 0 or not chain or len(chain) <= 1:
+                if quantity:
+                    result.append(entry)
+                continue
+
+            chain_multiplier = 1.0
+            for _part, qty in chain:
+                chain_multiplier *= qty
+
+            if chain_multiplier <= 0:
+                if quantity:
+                    result.append(entry)
+                continue
+
+            quantity = quantity / chain_multiplier
+
+            for chain_part, qty in reversed(chain):
+                available = assembly_stock.get(chain_part.pk, 0)
+                offset = min(available, -quantity)
+                assembly_stock[chain_part.pk] = available - offset
+                quantity += offset
+
+                if quantity >= 0:
+                    quantity = 0
+                    break
+                else:
+                    quantity *= qty
+
+            if quantity:
+                result.append({**entry, 'quantity': quantity})
+
+        return result
+
+
+class APIFetchMixin:
+    """Fetches forecasting entries from the real API endpoint, tracking query counts."""
+
+    def _actual_entries(self, part, consider_intermediate_stock):
         """Fetch forecasting entries for `part` from the real API endpoint.
 
         Bypasses `self.get()`'s built-in query-count assertion (default budget
@@ -151,7 +264,7 @@ class MultiLevelAPITestCase(MultiLevelBOMTestCase, InvenTreeAPITestCase):
                     'part': part.pk,
                     'include_upstream': True,
                     'include_variants': False,
-                    'consider_intermediate_stock': False,
+                    'consider_intermediate_stock': consider_intermediate_stock,
                 },
                 format='json',
             )
@@ -166,10 +279,11 @@ class MultiLevelAPITestCase(MultiLevelBOMTestCase, InvenTreeAPITestCase):
 
         return buckets
 
-    # -- Comparison -------------------------------------------------------
+
+class ComparisonMixin:
+    """Compares actual vs expected entry buckets, reporting a clear diff on mismatch."""
 
     def _compare(self, part, actual, expected):
-        """Compare actual vs expected entry buckets, reporting a clear diff on mismatch."""
         actual_keys = set(actual.keys())
         expected_keys = set(expected.keys())
 
@@ -200,7 +314,16 @@ class MultiLevelAPITestCase(MultiLevelBOMTestCase, InvenTreeAPITestCase):
 
             self.fail('\n'.join(lines))
 
-    # -- Test entry point ---------------------------------------------------
+
+class MultiLevelAPITestCase(
+    RawOracleMixin, APIFetchMixin, ComparisonMixin, MultiLevelBOMTestCase, InvenTreeAPITestCase
+):
+    """Compares the API against the oracle with `consider_intermediate_stock=false`."""
+
+    def setUp(self):
+        super().setUp()
+        self.url = reverse('plugin:stock-forecasting:part-forecasting')
+        self.query_counts = {}
 
     def test_forecast_matches_expected_for_every_part(self):
         """For every part in the fixture, compare the API's forecast against the oracle."""
@@ -208,8 +331,46 @@ class MultiLevelAPITestCase(MultiLevelBOMTestCase, InvenTreeAPITestCase):
 
         for part in self.all_parts:
             with self.subTest(part=part.name):
-                actual = self._actual_entries(part)
+                actual = self._actual_entries(part, consider_intermediate_stock=False)
                 expected = self._expected_entries(part)
+                entry_counts[part.name] = (
+                    sum(len(v) for v in actual.values()),
+                    sum(len(v) for v in expected.values()),
+                )
+                self._compare(part, actual, expected)
+
+        print('\nEntry counts per part (actual, expected) - sanity check against a hollow pass:')
+        for name, (n_actual, n_expected) in entry_counts.items():
+            print(f'  {name}: actual={n_actual}, expected={n_expected}')
+
+        print('\nQuery counts per part (InvenTreeAPITestCase default budget is 100):')
+        for name, count in self.query_counts.items():
+            flag = ' <-- exceeds default budget' if count >= 100 else ''
+            print(f'  {name}: {count}{flag}')
+
+
+class MultiLevelStockOffsetAPITestCase(
+    RawOracleMixin, APIFetchMixin, ComparisonMixin, MultiLevelBOMTestCase, InvenTreeAPITestCase
+):
+    """Compares the API against the oracle with `consider_intermediate_stock=true`
+    (the default) - including the independently-replicated stock-offset step.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.url = reverse('plugin:stock-forecasting:part-forecasting')
+        self.query_counts = {}
+
+    def test_forecast_matches_expected_with_stock_offset_for_every_part(self):
+        """For every part in the fixture, compare the API's offset-adjusted forecast
+        against the oracle's independently-computed offset-adjusted forecast.
+        """
+        entry_counts = {}
+
+        for part in self.all_parts:
+            with self.subTest(part=part.name):
+                actual = self._actual_entries(part, consider_intermediate_stock=True)
+                expected = self._expected_entries_with_stock_offset(part)
                 entry_counts[part.name] = (
                     sum(len(v) for v in actual.values()),
                     sum(len(v) for v in expected.values()),
