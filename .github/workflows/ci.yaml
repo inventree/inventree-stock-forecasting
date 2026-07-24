@@ -83,6 +83,10 @@ jobs:
       - name: Install Plugin
         run: |
           cd /home/inventree
+          # InvenTree's settings.py unconditionally sets TEST_RUNNER to
+          # django_slowtests whenever 'manage.py test' is run, but that
+          # package isn't part of the base inventree/inventree image.
+          HOME=/root pip3 install django_slowtests==1.1.1
           HOME=/root pip3 install -e $GITHUB_WORKSPACE
           HOME=/root invoke migrate
 
