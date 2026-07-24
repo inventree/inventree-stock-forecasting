@@ -43,6 +43,9 @@ On top of the BOM structure, a richer set of existing orders is created:
 - Multiple sales orders, at varying levels of completion (some pending, some
   partially shipped), against both top-level products (TOP1 x2, TOP2 x2) and
   the parts which are salable further down the chain (N2, C4).
+- One further sales order against TOP1 whose SAME line item (part + quantity)
+  is repeated 5x, each with a different target_date a month apart into the
+  future - exercising multiple SalesOrderLineItems against a single SalesOrder.
 - Multiple purchase orders, at varying levels of completion, against
   bottom-level components (C1, C3) and the parts which are purchaseable
   further up the chain (M2 x2, N1 x2, TOP2).
@@ -317,6 +320,20 @@ class MultiLevelBOMTestCase(InvenTreeTestCase):
             order=cls.so_c4, part=cls.c4, quantity=50,
             target_date=date.today() + timedelta(days=5),
         )
+
+        # TOP1 (tier 3) - a single order with the SAME line item (part + quantity)
+        # repeated 5x, each with a different target_date a month apart into the
+        # future. Exercises multiple SalesOrderLineItems against one SalesOrder.
+        cls.so_top1_repeat = SalesOrder.objects.create(
+            customer=cls.customer, reference='SO-ML-007'
+        )
+        cls.so_top1_repeat_lines = [
+            SalesOrderLineItem.objects.create(
+                order=cls.so_top1_repeat, part=cls.top1, quantity=7,
+                target_date=date.today() + timedelta(days=35 + 30 * i),
+            )
+            for i in range(5)
+        ]
 
     @classmethod
     def _create_build_orders(cls):
@@ -720,6 +737,31 @@ class OrderFixtureTests(MultiLevelBOMTestCase):
         self.assertEqual(self.build_m2.build_lines.count(), 2)  # C2, C3
         self.assertEqual(self.build_m4.build_lines.count(), 2)  # C1, C4
 
+    def test_repeated_line_item_sales_order_for_top1(self):
+        """A single SalesOrder can carry multiple lines for the same part, each
+        with its own target_date - here, 5 lines for TOP1, a month apart.
+        """
+        self.assertEqual(len(self.so_top1_repeat_lines), 5)
+
+        # All 5 lines belong to the same order
+        order_pks = {line.order.pk for line in self.so_top1_repeat_lines}
+        self.assertEqual(order_pks, {self.so_top1_repeat.pk})
+
+        # Same part, same quantity, all fully outstanding - only date varies
+        for line in self.so_top1_repeat_lines:
+            self.assertEqual(line.part, self.top1)
+            self.assertEqual(line.quantity, 7)
+            self.assertEqual(line.shipped, 0)
+
+        # Dates are 5 distinct values, each 30 days apart
+        dates = sorted(line.target_date for line in self.so_top1_repeat_lines)
+        self.assertEqual(len(set(dates)), 5)
+        for earlier, later in zip(dates, dates[1:]):
+            self.assertEqual((later - earlier).days, 30)
+
+        # The order itself has exactly 5 line items
+        self.assertEqual(self.so_top1_repeat.lines.count(), 5)
+
 
 class StockLevelTests(MultiLevelBOMTestCase):
     """Sanity checks on the seeded stock levels across every tier."""
@@ -786,8 +828,8 @@ class FutureOrderScheduleTests(MultiLevelBOMTestCase):
         self.assertEqual(Build.objects.filter(part=self.top2).count(), 8)
 
     def test_total_sales_order_line_counts_include_near_term_and_future(self):
-        # 2 near-term (SO-ML-001, SO-ML-002) + 5 future
-        self.assertEqual(SalesOrderLineItem.objects.filter(part=self.top1).count(), 7)
+        # 2 near-term (SO-ML-001, SO-ML-002) + 5 future + 5 repeated-line (SO-ML-007)
+        self.assertEqual(SalesOrderLineItem.objects.filter(part=self.top1).count(), 12)
         # 2 near-term (SO-ML-003, SO-ML-004) + 5 future
         self.assertEqual(SalesOrderLineItem.objects.filter(part=self.top2).count(), 7)
 
