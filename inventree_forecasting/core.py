@@ -60,7 +60,7 @@ class InvenTreeForecasting(
         if part_id := context.get("target_id", None):
             try:
                 part = Part.objects.filter(id=part_id).first()
-            except Exception:
+            except (ValueError, TypeError):
                 part = None
         else:
             part = None
