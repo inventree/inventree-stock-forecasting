@@ -21,6 +21,16 @@ class PartForecast:
         # Available stock for each intermediate assembly, used to offset demand.
         self.assembly_stock = {}
 
+        # Per-part query result caches, keyed by part pk. A part reached via
+        # multiple independent BOM paths (e.g. a shared component under a
+        # diamond dependency) is visited once per path, but its own direct
+        # sales order lines / build line allocations / "who uses me" BOM
+        # items don't depend on which path we arrived by - only fetch them
+        # from the database once per distinct part, and reuse across visits.
+        self._sales_order_line_cache = {}
+        self._build_line_cache = {}
+        self._used_in_bom_items_cache = {}
+
     def post_process_entries(self, entries: list) -> list:
         """Post-process the list of forecasting entries before returning to the user.
 
@@ -161,7 +171,7 @@ class PartForecast:
         return {
             "date": date,
             "quantity": float(quantity) * multiplier,
-            "label": getattr(instance, "reference", str(instance)),
+            "label": instance.reference,
             "title": str(title),
             "model_type": instance.__class__.__name__.lower(),
             "model_id": instance.pk,
@@ -230,20 +240,23 @@ class PartForecast:
         """
         entries = []
 
-        # Find all open sales order line items
-        so_lines = order_models.SalesOrderLineItem.objects.filter(
-            order__status__in=order_status.SalesOrderStatusGroups.OPEN
-        ).select_related("order", "part")
+        if part.pk not in self._sales_order_line_cache:
+            # Find all open sales order line items
+            so_lines = order_models.SalesOrderLineItem.objects.filter(
+                order__status__in=order_status.SalesOrderStatusGroups.OPEN
+            ).select_related("order", "part")
 
-        if include_variants:
-            # Filter lines to include any variants of the provided part
-            variants = part.get_descendants(include_self=True)
-            so_lines = so_lines.filter(part__in=variants)
-        else:
-            # Filter lines to only include the exact part
-            so_lines = so_lines.filter(part=part)
+            if include_variants:
+                # Filter lines to include any variants of the provided part
+                variants = part.get_descendants(include_self=True)
+                so_lines = so_lines.filter(part__in=variants)
+            else:
+                # Filter lines to only include the exact part
+                so_lines = so_lines.filter(part=part)
 
-        for line in so_lines:
+            self._sales_order_line_cache[part.pk] = list(so_lines)
+
+        for line in self._sales_order_line_cache[part.pk]:
             target_date = line.target_date or line.order.target_date
             # Negative quantities indicate outgoing sales orders
 
@@ -337,22 +350,25 @@ class PartForecast:
         """
         entries = []
 
-        if include_variants:
-            # If we are including variants, get all descendants of the part
-            parts = list(part.get_descendants(include_self=True))
-        else:
-            # Only include the exact part
-            parts = [part]
+        if part.pk not in self._build_line_cache:
+            if include_variants:
+                # If we are including variants, get all descendants of the part
+                parts = list(part.get_descendants(include_self=True))
+            else:
+                # Only include the exact part
+                parts = [part]
 
-        # We now have a list of parts to check
-        # For each part, look at any outstanding build lines which reference this part
-        lines = build_models.BuildLine.objects.filter(
-            bom_item__sub_part__in=parts,
-            build__status__in=build_status.BuildStatusGroups.ACTIVE_CODES,
-            consumed__lt=F("quantity"),
-        ).select_related("build", "bom_item", "bom_item__part")
+            # We now have a list of parts to check
+            # For each part, look at any outstanding build lines which reference this part
+            lines = build_models.BuildLine.objects.filter(
+                bom_item__sub_part__in=parts,
+                build__status__in=build_status.BuildStatusGroups.ACTIVE_CODES,
+                consumed__lt=F("quantity"),
+            ).select_related("build", "bom_item", "bom_item__part")
 
-        for line in lines:
+            self._build_line_cache[part.pk] = list(lines)
+
+        for line in self._build_line_cache[part.pk]:
             remaining = max(0, line.quantity - line.consumed)
 
             if remaining > 0:
@@ -421,39 +437,55 @@ class PartForecast:
                 chain=chain,
             )
 
-            # Find any assembly parts which use this one
-            bom_items = (
-                part_models.BomItem.objects.filter(
-                    current_part.get_used_in_bom_item_filter(
-                        include_variants=True, include_substitutes=False
+            # Find any assembly parts which use this one. This doesn't depend on
+            # multiplier/chain, only on current_part, so it's cached per-part -
+            # a part reached via multiple BOM paths (e.g. a shared component
+            # under a diamond dependency) would otherwise re-run this query,
+            # and the inherited-BOM variant expansion below, once per visit.
+            if current_part.pk not in self._used_in_bom_items_cache:
+                bom_items = (
+                    part_models.BomItem.objects.filter(
+                        current_part.get_used_in_bom_item_filter(
+                            include_variants=True, include_substitutes=False
+                        )
                     )
+                    .filter(part__active=True)
+                    .select_related("part")
                 )
-                .filter(part__active=True)
-                .select_related("part")
-            )
 
-            for item in bom_items:
-                bom_quantity = float(item.quantity) * float(multiplier)
+                parent_part_quantities = []
 
-                # If the BOM Item is inherited by variants
-                if item.inherited:
-                    parent_parts = list(
-                        item.part.get_descendants(include_self=True).filter(active=True)
-                    )
-                else:
-                    parent_parts = [item.part]
+                for item in bom_items:
+                    # If the BOM Item is inherited by variants
+                    if item.inherited:
+                        parent_parts = list(
+                            item.part.get_descendants(include_self=True).filter(
+                                active=True
+                            )
+                        )
+                    else:
+                        parent_parts = [item.part]
 
-                # Add this assembly to the list of parts to process
-                for parent_part in parent_parts:
-                    # Skip inactive parts
-                    if not parent_part.active:
-                        continue
+                    for parent_part in parent_parts:
+                        # Skip inactive parts
+                        if not parent_part.active:
+                            continue
 
-                    parts_to_process.append((
-                        parent_part,
-                        level + 1,
-                        bom_quantity,
-                        chain,
-                    ))
+                        parent_part_quantities.append((
+                            parent_part,
+                            float(item.quantity),
+                        ))
+
+                self._used_in_bom_items_cache[current_part.pk] = parent_part_quantities
+
+            for parent_part, item_quantity in self._used_in_bom_items_cache[
+                current_part.pk
+            ]:
+                parts_to_process.append((
+                    parent_part,
+                    level + 1,
+                    item_quantity * float(multiplier),
+                    chain,
+                ))
 
         return entries
