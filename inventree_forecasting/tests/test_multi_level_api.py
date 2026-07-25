@@ -56,6 +56,7 @@ from the fixture data alone.
 """
 
 from collections import defaultdict
+from datetime import date as date_cls
 
 from build.models import Build, BuildLine
 from build.status_codes import BuildStatusGroups
@@ -205,8 +206,20 @@ class RawOracleMixin:
         result = []
 
         def sort_key(entry):
-            date = entry['date']
-            return (date is None, date)
+            """Matches forecast.py's `get_entries` sort key exactly: no-date first,
+            then increasing date, then a deterministic (model_type, model_id,
+            chain) tie-break for same-date entries.
+            """
+            entry_date = entry['date']
+            chain = entry.get('chain') or []
+            chain_key = tuple((chain_part.pk, qty) for chain_part, qty in chain)
+            return (
+                entry_date is not None,
+                entry_date or date_cls.min,
+                entry['model_type'],
+                entry['model_id'],
+                chain_key,
+            )
 
         for entry in sorted(entries, key=sort_key):
             quantity = entry['quantity']
@@ -281,7 +294,17 @@ class APIFetchMixin:
 
 
 class ComparisonMixin:
-    """Compares actual vs expected entry buckets, reporting a clear diff on mismatch."""
+    """Compares actual vs expected entry buckets, reporting a clear diff on mismatch.
+
+    Compares the exact (sorted) list of quantities per (model_type, model_id,
+    date) key. This relies on forecast.py's entry ordering being deterministic
+    (date, then a (model_type, model_id) tie-break for same-date entries) -
+    see `get_entries`'s `sort_key`. Before that tie-break existed, same-date
+    entries competing for a shared stock pool could offset differently
+    depending on incidental traversal order; now both this oracle's sort and
+    the real code's sort apply the identical deterministic tie-break, so the
+    split is reproducible and can be compared exactly again.
+    """
 
     def _compare(self, part, actual, expected):
         actual_keys = set(actual.keys())
@@ -385,3 +408,56 @@ class MultiLevelStockOffsetAPITestCase(
         for name, count in self.query_counts.items():
             flag = ' <-- exceeds default budget' if count >= 100 else ''
             print(f'  {name}: {count}{flag}')
+
+
+class TemplateVariantForecastAPITestCase(MultiLevelBOMTestCase, InvenTreeAPITestCase):
+    """E2E check for the isolated template/variant inherited-BOM fixture.
+
+    A sales order exists only against VARIANT_A (never against TEMPLATE
+    itself). Querying TEMPLATE's own forecast should only pick it up when
+    `include_variants=true` is passed - that's the mechanism (`Part.
+    get_descendants(include_self=True)` in `generate_sales_order_entries`),
+    distinct from the `BomItem.inherited` mechanism the fixture also sets up
+    (which governs upstream BOM propagation *from* the shared component, not
+    tested here since the request only asked about querying TEMPLATE itself).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.url = reverse('plugin:stock-forecasting:part-forecasting')
+
+    def _fetch(self, include_variants):
+        response = self.get(
+            self.url,
+            data={
+                'part': self.template.pk,
+                'include_variants': include_variants,
+                'include_upstream': False,
+                'consider_intermediate_stock': False,
+            },
+            expected_code=200,
+        )
+        return response.data['entries']
+
+    def test_variant_sales_order_included_with_include_variants(self):
+        entries = self._fetch(include_variants=True)
+
+        matches = [
+            e for e in entries
+            if e['model_type'] == 'salesorder' and e['model_id'] == self.so_variant_a.pk
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(float(matches[0]['quantity']), -9.0)
+        self.assertEqual(
+            _normalize_date(matches[0]['date']),
+            _normalize_date(self.so_variant_a_line.target_date),
+        )
+
+    def test_variant_sales_order_excluded_without_include_variants(self):
+        entries = self._fetch(include_variants=False)
+
+        matches = [
+            e for e in entries
+            if e['model_type'] == 'salesorder' and e['model_id'] == self.so_variant_a.pk
+        ]
+        self.assertEqual(matches, [])

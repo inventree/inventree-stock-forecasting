@@ -1,6 +1,5 @@
 """Core forecasting calculation logic for the InvenTree Forecasting plugin."""
 
-import functools
 from datetime import date
 from decimal import Decimal
 from math import prod
@@ -97,24 +96,40 @@ class PartForecast:
             ),
         ]
 
-        def compare_entries(entry_1: dict, entry_2: dict) -> int:
-            """Comparison function for two forecasting entries, to assist in sorting.
+        def sort_key(entry: dict):
+            """Sort key for forecasting entries.
 
-            - Sort in increasing order of date
-            - Account for the fact that either date may be None
+            - Entries with no date sort first
+            - Then in increasing order of date
+            - Then by (model_type, model_id, chain), as a deterministic
+              tie-break for entries sharing the same date. Without this,
+              entries with equal dates keep whatever order the upstream BOM
+              walk happened to generate them in - which can vary based on
+              traversal order and is not itself meaningful. This matters when
+              post_process_entries offsets several same-date entries against a
+              shared, limited stock pool: which entry gets processed (and
+              offset) first can change the result, so a stable, explicit
+              tie-break ensures the same input always produces the same
+              output. `chain` is included because a single Build/Order can
+              contribute more than one entry at the same tier (e.g. an
+              assembly whose BOM needs two different sub-parts that are both
+              reachable from the part being queried) - those entries share the
+              same model_type/model_id, so chain (which differs per BOM path)
+              is needed to fully distinguish them.
             """
-            date_1 = entry_1["date"]
-            date_2 = entry_2["date"]
+            entry_date = entry["date"]
+            chain = entry.get("chain") or []
+            chain_key = tuple((chain_part.pk, qty) for chain_part, qty in chain)
+            return (
+                entry_date is not None,
+                entry_date or date.min,
+                entry["model_type"],
+                entry["model_id"],
+                chain_key,
+            )
 
-            if date_1 is None:
-                return -1
-            elif date_2 is None:
-                return 1
-
-            return -1 if date_1 < date_2 else 1
-
-        # Sort by date
-        entries = sorted(entries, key=functools.cmp_to_key(compare_entries))
+        # Sort by date (deterministically, including same-date tie-breaking)
+        entries = sorted(entries, key=sort_key)
 
         return entries
 
