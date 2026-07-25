@@ -61,10 +61,23 @@ the top has a part with clearly-sufficient stock. Both orphan parts (M4, N3) and
 TOP1 have no stock at all, so their outstanding demand has no cushion to offset
 against.
 
-Finally, each top-level product (TOP1, TOP2) gets a full year's forecast
-timeline staged on top of its near-term orders: 7 build orders and 5 sales
-orders each, spread across the next ~360 days at varying quantities and
-completion/shipped levels.
+Each top-level product (TOP1, TOP2) gets a full year's forecast timeline
+staged on top of its near-term orders: 7 build orders and 5 sales orders each,
+spread across the next ~360 days at varying quantities and completion/shipped
+levels.
+
+Finally, a separate, deliberately isolated fixture exercises *inherited* BOM
+items across part variants - a code path (`BomItem.inherited`, `Part.variant_of`)
+the rest of the graph above never touches::
+
+    TEMPLATE (is_template=True) = 1x SHARED (inherited=True)
+    VARIANT_A, VARIANT_B (variant_of=TEMPLATE)
+
+`SHARED` is not connected to the rest of the fixture. Because the BomItem is
+marked `inherited`, both `VARIANT_A` and `VARIANT_B` effectively include
+`SHARED` in their BOM too, without it being redefined per-variant. A sales
+order is placed against `VARIANT_A` only, to check that querying the
+*template's* own forecast with `include_variants=True` picks it up.
 """
 
 from datetime import date, timedelta
@@ -104,6 +117,7 @@ class MultiLevelBOMTestCase(InvenTreeTestCase):
         cls._create_build_orders()
         cls._create_stock_items()
         cls._create_future_orders_for_top_level_parts()
+        cls._create_template_variant_fixture()
 
     @classmethod
     def _create_parts(cls):
@@ -490,6 +504,50 @@ class MultiLevelBOMTestCase(InvenTreeTestCase):
             )
             cls.top2_future_sales_orders.append(line)
 
+    @classmethod
+    def _create_template_variant_fixture(cls):
+        """Build an isolated template/variant BOM-inheritance scenario.
+
+        `SHARED` is included in `TEMPLATE`'s BOM via an `inherited=True` BomItem,
+        so it's effectively part of every variant's BOM too, without being
+        redefined per-variant. A sales order against `VARIANT_A` should show up
+        when querying `TEMPLATE`'s own forecast with `include_variants=True`.
+        """
+        cls.template = Part.objects.create(
+            name='Widget Template', description='Template assembly for variant testing',
+            is_template=True, assembly=True, component=False,
+            purchaseable=False, salable=True,
+        )
+        cls.shared_component = Part.objects.create(
+            name='Shared Mid-Level Component', description='Inherited across all TEMPLATE variants',
+            assembly=True, component=True, purchaseable=False, salable=False,
+        )
+        cls.variant_a = Part.objects.create(
+            name='Widget Variant A', description='Variant of the template assembly',
+            variant_of=cls.template, assembly=True, component=False,
+            purchaseable=False, salable=True,
+        )
+        cls.variant_b = Part.objects.create(
+            name='Widget Variant B', description='Variant of the template assembly',
+            variant_of=cls.template, assembly=True, component=False,
+            purchaseable=False, salable=True,
+        )
+
+        # Refresh all four before wiring up the BomItem - see the MPTT tree_id
+        # staleness note in _create_parts().
+        for part in [cls.template, cls.shared_component, cls.variant_a, cls.variant_b]:
+            part.refresh_from_db()
+
+        cls.template_shared_bom_item = BomItem.objects.create(
+            part=cls.template, sub_part=cls.shared_component, quantity=1, inherited=True,
+        )
+
+        cls.so_variant_a = SalesOrder.objects.create(customer=cls.customer, reference='SO-ML-008')
+        cls.so_variant_a_line = SalesOrderLineItem.objects.create(
+            order=cls.so_variant_a, part=cls.variant_a, quantity=9,
+            target_date=date.today() + timedelta(days=18),
+        )
+
 
 class PartFlagsTests(MultiLevelBOMTestCase):
     """Sanity checks that each part was created with the intended flags."""
@@ -864,3 +922,49 @@ class FutureOrderScheduleTests(MultiLevelBOMTestCase):
             shipped = [line.shipped for line in lines]
             self.assertTrue(any(s == 0 for s in shipped))
             self.assertTrue(any(s > 0 for s in shipped))
+
+
+class TemplateVariantInheritedBOMTests(MultiLevelBOMTestCase):
+    """Sanity checks on the isolated template/variant inherited-BOM fixture."""
+
+    def test_template_and_variants_are_flagged_correctly(self):
+        self.assertTrue(self.template.is_template)
+        self.assertFalse(self.variant_a.is_template)
+        self.assertFalse(self.variant_b.is_template)
+
+        self.assertEqual(self.variant_a.variant_of, self.template)
+        self.assertEqual(self.variant_b.variant_of, self.template)
+
+    def test_shared_component_defined_only_on_template(self):
+        """The BomItem is only ever created once, directly on TEMPLATE."""
+        self.assertEqual(BomItem.objects.filter(sub_part=self.shared_component).count(), 1)
+        self.assertEqual(self.template_shared_bom_item.part, self.template)
+        self.assertTrue(self.template_shared_bom_item.inherited)
+
+    def test_variants_inherit_the_shared_component_in_their_bom(self):
+        """Neither variant has its own BomItem for SHARED, but get_bom_items()
+        (which accounts for inheritance) should show it for both anyway.
+        """
+        for variant in [self.variant_a, self.variant_b]:
+            self.assertFalse(
+                BomItem.objects.filter(part=variant, sub_part=self.shared_component).exists()
+            )
+            effective_sub_parts = {
+                item.sub_part for item in variant.get_bom_items(include_inherited=True)
+            }
+            self.assertIn(self.shared_component, effective_sub_parts)
+
+    def test_variant_excluded_when_inheritance_not_considered(self):
+        """Without include_inherited, a variant's own (empty) BOM doesn't show SHARED."""
+        for variant in [self.variant_a, self.variant_b]:
+            effective_sub_parts = {
+                item.sub_part for item in variant.get_bom_items(include_inherited=False)
+            }
+            self.assertNotIn(self.shared_component, effective_sub_parts)
+
+    def test_sales_order_exists_for_variant_a_only(self):
+        self.assertEqual(self.so_variant_a_line.part, self.variant_a)
+        self.assertEqual(self.so_variant_a_line.quantity, 9)
+        self.assertEqual(self.so_variant_a_line.shipped, 0)
+
+        self.assertFalse(SalesOrderLineItem.objects.filter(part=self.variant_b).exists())
