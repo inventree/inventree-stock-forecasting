@@ -2,7 +2,6 @@
 
 from django.contrib.auth.models import Group
 from django.utils.translation import gettext_lazy as _
-
 from plugin import InvenTreePlugin
 from plugin.mixins import SettingsMixin, UrlsMixin, UserInterfaceMixin
 
@@ -58,29 +57,35 @@ class InvenTreeForecasting(
             if user_group is not None and user_group not in request.user.groups.all():
                 allowed_user = False
 
-        # Only display this panel for the 'part' target
-        if allowed_user and context.get("target_model") == "part":
-            if part_id := context.get("target_id", None):
-                try:
-                    part = Part.objects.filter(id=part_id).first()
-                except Exception:
-                    part = None
+        if part_id := context.get("target_id", None):
+            try:
+                part = Part.objects.filter(id=part_id).first()
+            except (ValueError, TypeError):
+                part = None
+        else:
+            part = None
 
-                # A valid (non-virtual) part is required
-                if part and not part.virtual:
-                    panels.append({
-                        "key": "stock-forecasting",
-                        "title": _("Stock Forecasting"),
-                        "description": _("Stock level forecasting"),
-                        "icon": "ti:calendar-time:outline",
-                        "source": self.plugin_static_file(
-                            "ForecastingPanel.js:RenderInvenTreeForecastingPanel"
-                        ),
-                        "context": {
-                            # Provide additional context data to the panel
-                            "settings": self.get_settings_dict(),
-                        },
-                    })
+        # Only display this panel for the 'part' target
+        if (
+            allowed_user
+            and part
+            and not part.virtual
+            and context.get("target_model") == "part"
+        ):
+            # A valid (non-virtual) part is required
+            panels.append({
+                "key": "stock-forecasting",
+                "title": _("Stock Forecasting"),
+                "description": _("Stock level forecasting"),
+                "icon": "ti:calendar-time:outline",
+                "source": self.plugin_static_file(
+                    "ForecastingPanel.js:RenderInvenTreeForecastingPanel"
+                ),
+                "context": {
+                    # Provide additional context data to the panel
+                    "settings": self.get_settings_dict(),
+                },
+            })
 
         return panels
 
