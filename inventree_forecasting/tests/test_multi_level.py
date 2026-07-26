@@ -78,6 +78,28 @@ marked `inherited`, both `VARIANT_A` and `VARIANT_B` effectively include
 `SHARED` in their BOM too, without it being redefined per-variant. A sales
 order is placed against `VARIANT_A` only, to check that querying the
 *template's* own forecast with `include_variants=True` picks it up.
+
+Finally, a 10-tier-deep chain is grafted onto TOP1, to stress-test the
+upstream traversal's depth, width, and multi-path handling well beyond the
+4-tier diamond above::
+
+    D0  D0B  D0C                         (tier 0 - leaves)
+    D1  = 2x D0  + 1x D0B                 (tier 1)
+    D2  = 1x D1  + 3x D0C                 (tier 2, also salable)
+    D3  = 2x D2                           (tier 3)
+    D4  = 1x D3                           (tier 4, has its own build order)
+    D5  = 3x D4                           (tier 5)
+    D5B = 2x D4                           (tier 5 - sibling, shares D4 with D5)
+    D6  = 1x D5  + 1x D5B                 (tier 6 - widened BOM)
+    D7  = 2x D6  + 1x D5                  (tier 7 - shortcut: D5 direct AND via D6)
+    D8  = 1x D7                           (tier 8)
+    TOP1 gains: + 1x D8 (completes the 10-tier chain: D0 -> ... -> D8 -> TOP1)
+                + 5x D0 (shortcut: tier 0 straight to tier 9)
+
+D0 is reachable from TOP1 both via the full 9-level chain and via a direct
+BOM line, and D4 is reachable from D7 via two internal diamonds (through D5
+and D5B, which both merge again at D6) - multi-path shortcuts at very
+different scales, layered on top of the existing rich order data on TOP1.
 """
 
 from datetime import date, timedelta
@@ -118,6 +140,7 @@ class MultiLevelBOMTestCase(InvenTreeTestCase):
         cls._create_stock_items()
         cls._create_future_orders_for_top_level_parts()
         cls._create_template_variant_fixture()
+        cls._create_deep_chain_fixture()
 
     @classmethod
     def _create_parts(cls):
@@ -548,6 +571,137 @@ class MultiLevelBOMTestCase(InvenTreeTestCase):
             target_date=date.today() + timedelta(days=18),
         )
 
+    @classmethod
+    def _create_deep_chain_fixture(cls):
+        """Build a 10-tier-deep chain (D0 -> D1 -> ... -> D8 -> TOP1), with two
+        shortcuts that create genuine multi-path diamonds at very different
+        scales, plus extra sibling components/BOM lines for width:
+
+            D0  D0B  D0C                         (tier 0 - leaves)
+            D1  = 2x D0  + 1x D0B                 (tier 1)
+            D2  = 1x D1  + 3x D0C                 (tier 2, also salable)
+            D3  = 2x D2                           (tier 3)
+            D4  = 1x D3                           (tier 4, gets its own build order)
+            D5  = 3x D4                           (tier 5)
+            D5B = 2x D4                           (tier 5 - sibling, shares D4 with D5)
+            D6  = 1x D5  + 1x D5B                 (tier 6 - widened BOM)
+            D7  = 2x D6  + 1x D5                  (tier 7 - shortcut: D5 direct AND via D6)
+            D8  = 1x D7                           (tier 8)
+            TOP1 gains: + 1x D8 (completes the 10-tier chain from D0)
+                        + 5x D0 (shortcut: tier 0 straight to tier 9)
+
+        So D0 is reachable from TOP1 via a 9-level chain AND a direct BOM line,
+        and D4 is reachable from D7 via two internal diamonds (through D5 and
+        D5B, which themselves both merge at D6). This stresses the batched
+        upstream traversal with real depth, width, and multiple shortcut paths
+        at different scales, on top of the existing diamond fixture above.
+        """
+        cls.d0 = Part.objects.create(
+            name='Deep 0', description='Tier 0 leaf of the deep chain',
+            purchaseable=True, component=True, assembly=False, salable=False,
+        )
+        cls.d0b = Part.objects.create(
+            name='Deep 0B', description='Tier 0 leaf of the deep chain (width)',
+            purchaseable=True, component=True, assembly=False, salable=False,
+        )
+        cls.d0c = Part.objects.create(
+            name='Deep 0C', description='Tier 0 leaf of the deep chain (width)',
+            purchaseable=True, component=True, assembly=False, salable=False,
+        )
+        cls.d1 = Part.objects.create(
+            name='Deep 1', description='Tier 1 of the deep chain',
+            assembly=True, component=True, purchaseable=False, salable=False,
+        )
+        cls.d2 = Part.objects.create(
+            name='Deep 2', description='Tier 2 of the deep chain (also salable)',
+            assembly=True, component=True, purchaseable=False, salable=True,
+        )
+        cls.d3 = Part.objects.create(
+            name='Deep 3', description='Tier 3 of the deep chain',
+            assembly=True, component=True, purchaseable=False, salable=False,
+        )
+        cls.d4 = Part.objects.create(
+            name='Deep 4', description='Tier 4 of the deep chain',
+            assembly=True, component=True, purchaseable=False, salable=False,
+        )
+        cls.d5 = Part.objects.create(
+            name='Deep 5', description='Tier 5 of the deep chain',
+            assembly=True, component=True, purchaseable=False, salable=False,
+        )
+        cls.d5b = Part.objects.create(
+            name='Deep 5B', description='Tier 5 of the deep chain (sibling of Deep 5)',
+            assembly=True, component=True, purchaseable=False, salable=False,
+        )
+        cls.d6 = Part.objects.create(
+            name='Deep 6', description='Tier 6 of the deep chain',
+            assembly=True, component=True, purchaseable=False, salable=False,
+        )
+        cls.d7 = Part.objects.create(
+            name='Deep 7', description='Tier 7 of the deep chain',
+            assembly=True, component=True, purchaseable=False, salable=False,
+        )
+        cls.d8 = Part.objects.create(
+            name='Deep 8', description='Tier 8 of the deep chain',
+            assembly=True, component=True, purchaseable=False, salable=False,
+        )
+
+        cls.deep_chain_parts = [
+            cls.d0, cls.d0b, cls.d0c,
+            cls.d1, cls.d2, cls.d3, cls.d4, cls.d5, cls.d5b, cls.d6, cls.d7, cls.d8,
+        ]
+        cls.all_parts += cls.deep_chain_parts
+
+        # New root Parts can shift tree_id (and, for parts with a real
+        # variant_of parent/child relationship, lft/rght too) for ALL existing
+        # parts - see the MPTT tree_id staleness note in _create_parts(). This
+        # affects not just cls.top1 (about to get new BomItems) but also the
+        # cached template/variant objects from _create_template_variant_fixture,
+        # whose get_ancestors()/get_descendants() queries depend on correct
+        # lft/rght - refresh all of them now.
+        for part in [
+            *cls.deep_chain_parts, cls.top1,
+            cls.template, cls.shared_component, cls.variant_a, cls.variant_b,
+        ]:
+            part.refresh_from_db()
+
+        BomItem.objects.create(part=cls.d1, sub_part=cls.d0, quantity=2)
+        BomItem.objects.create(part=cls.d1, sub_part=cls.d0b, quantity=1)
+
+        BomItem.objects.create(part=cls.d2, sub_part=cls.d1, quantity=1)
+        BomItem.objects.create(part=cls.d2, sub_part=cls.d0c, quantity=3)
+
+        BomItem.objects.create(part=cls.d3, sub_part=cls.d2, quantity=2)
+        BomItem.objects.create(part=cls.d4, sub_part=cls.d3, quantity=1)
+
+        BomItem.objects.create(part=cls.d5, sub_part=cls.d4, quantity=3)
+        BomItem.objects.create(part=cls.d5b, sub_part=cls.d4, quantity=2)
+
+        BomItem.objects.create(part=cls.d6, sub_part=cls.d5, quantity=1)
+        BomItem.objects.create(part=cls.d6, sub_part=cls.d5b, quantity=1)
+
+        # Shortcut: D7 uses D5 both indirectly (via D6) and directly
+        cls.d7_d6_item = BomItem.objects.create(part=cls.d7, sub_part=cls.d6, quantity=2)
+        cls.d7_d5_item = BomItem.objects.create(part=cls.d7, sub_part=cls.d5, quantity=1)
+
+        BomItem.objects.create(part=cls.d8, sub_part=cls.d7, quantity=1)
+
+        # Completes the 10-tier chain from D0 up to TOP1 (tier 9), and adds the
+        # top-to-bottom shortcut: TOP1 also uses D0 directly.
+        cls.top1_d8_item = BomItem.objects.create(part=cls.top1, sub_part=cls.d8, quantity=1)
+        cls.top1_d0_item = BomItem.objects.create(part=cls.top1, sub_part=cls.d0, quantity=5)
+
+        # A build order and a sales order along the chain itself, so it isn't
+        # relying solely on demand inherited from TOP1's own rich order set.
+        cls.build_d4 = Build.objects.create(
+            part=cls.d4, quantity=9, completed=3, reference='BO-9301',
+            target_date=date.today() + timedelta(days=11),
+        )
+        cls.so_d2 = SalesOrder.objects.create(customer=cls.customer, reference='SO-ML-009')
+        cls.so_d2_line = SalesOrderLineItem.objects.create(
+            order=cls.so_d2, part=cls.d2, quantity=6, shipped=2,
+            target_date=date.today() + timedelta(days=16),
+        )
+
 
 class PartFlagsTests(MultiLevelBOMTestCase):
     """Sanity checks that each part was created with the intended flags."""
@@ -968,3 +1122,81 @@ class TemplateVariantInheritedBOMTests(MultiLevelBOMTestCase):
         self.assertEqual(self.so_variant_a_line.shipped, 0)
 
         self.assertFalse(SalesOrderLineItem.objects.filter(part=self.variant_b).exists())
+
+
+class DeepChainTests(MultiLevelBOMTestCase):
+    """Sanity checks on the 10-tier-deep chain grafted onto TOP1."""
+
+    def _bom_quantity(self, part, sub_part):
+        return BomItem.objects.get(part=part, sub_part=sub_part).quantity
+
+    def test_deep_chain_is_included_in_all_parts(self):
+        for part in self.deep_chain_parts:
+            self.assertIn(part, self.all_parts)
+        self.assertEqual(len(self.deep_chain_parts), 12)
+
+    def test_linear_chain_quantities(self):
+        self.assertEqual(self._bom_quantity(self.d1, self.d0), 2)
+        self.assertEqual(self._bom_quantity(self.d1, self.d0b), 1)
+        self.assertEqual(self._bom_quantity(self.d2, self.d1), 1)
+        self.assertEqual(self._bom_quantity(self.d2, self.d0c), 3)
+        self.assertEqual(self._bom_quantity(self.d3, self.d2), 2)
+        self.assertEqual(self._bom_quantity(self.d4, self.d3), 1)
+        self.assertEqual(self._bom_quantity(self.d5, self.d4), 3)
+        self.assertEqual(self._bom_quantity(self.d5b, self.d4), 2)
+        self.assertEqual(self._bom_quantity(self.d6, self.d5), 1)
+        self.assertEqual(self._bom_quantity(self.d6, self.d5b), 1)
+        self.assertEqual(self._bom_quantity(self.d7, self.d6), 2)
+        self.assertEqual(self._bom_quantity(self.d7, self.d5), 1)
+        self.assertEqual(self._bom_quantity(self.d8, self.d7), 1)
+        self.assertEqual(self._bom_quantity(self.top1, self.d8), 1)
+        self.assertEqual(self._bom_quantity(self.top1, self.d0), 5)
+
+    def test_chain_is_exactly_ten_tiers_deep(self):
+        """D0 (tier 0) up to TOP1 (tier 9) via the D8 path is 10 distinct tiers."""
+        chain = [
+            self.d0, self.d1, self.d2, self.d3, self.d4,
+            self.d5, self.d6, self.d7, self.d8, self.top1,
+        ]
+        self.assertEqual(len(chain), 10)
+        for sub_part, part in zip(chain, chain[1:]):
+            self.assertTrue(BomItem.objects.filter(part=part, sub_part=sub_part).exists())
+
+    def test_top1_reaches_d0_via_shortcut_and_full_chain(self):
+        """D0 is reachable from TOP1 both directly and via the full 9-level chain."""
+        self.assertTrue(BomItem.objects.filter(part=self.top1, sub_part=self.d0).exists())
+        self.assertTrue(BomItem.objects.filter(part=self.top1, sub_part=self.d8).exists())
+
+        parents_of_d0 = set(
+            BomItem.objects.filter(sub_part=self.d0).values_list('part', flat=True)
+        )
+        self.assertEqual(parents_of_d0, {self.d1.pk, self.top1.pk})
+
+    def test_d4_reachable_via_two_internal_diamonds(self):
+        """D4 is used by both D5 and D5B, which both merge again at D6."""
+        parents_of_d4 = set(
+            BomItem.objects.filter(sub_part=self.d4).values_list('part', flat=True)
+        )
+        self.assertEqual(parents_of_d4, {self.d5.pk, self.d5b.pk})
+
+        parents_of_d5 = set(
+            BomItem.objects.filter(sub_part=self.d5).values_list('part', flat=True)
+        )
+        self.assertEqual(parents_of_d5, {self.d6.pk, self.d7.pk})
+
+    def test_d6_bom_is_widened_by_the_sibling(self):
+        self.assertEqual(BomItem.objects.filter(part=self.d6).count(), 2)
+
+    def test_build_order_and_sales_order_along_the_chain(self):
+        self.assertEqual(self.build_d4.part, self.d4)
+        self.assertEqual(self.build_d4.quantity, 9)
+        self.assertEqual(self.build_d4.completed, 3)
+
+        self.assertEqual(self.so_d2_line.part, self.d2)
+        self.assertEqual(self.so_d2_line.quantity, 6)
+        self.assertEqual(self.so_d2_line.shipped, 2)
+
+    def test_d2_is_salable(self):
+        self.assertTrue(self.d2.salable)
+        for part in [self.d0, self.d0b, self.d0c, self.d1, self.d3, self.d4]:
+            self.assertFalse(part.salable)

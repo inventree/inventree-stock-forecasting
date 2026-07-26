@@ -1,5 +1,6 @@
 """Core forecasting calculation logic for the InvenTree Forecasting plugin."""
 
+from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 from math import prod
@@ -10,7 +11,7 @@ import order.models as order_models
 import order.status_codes as order_status
 import part.models as part_models
 import part.serializers as part_serializers
-from django.db.models import F, Model
+from django.db.models import F, Model, Q
 from django.utils.translation import gettext_lazy as _
 
 
@@ -20,6 +21,16 @@ class PartForecast:
     def __init__(self):
         # Available stock for each intermediate assembly, used to offset demand.
         self.assembly_stock = {}
+
+        # Per-part query result caches, keyed by part pk. A part reached via
+        # multiple independent BOM paths (e.g. a shared component under a
+        # diamond dependency) is visited once per path, but its own direct
+        # sales order lines / build line allocations / "who uses me" BOM
+        # items don't depend on which path we arrived by - only fetch them
+        # from the database once per distinct part, and reuse across visits.
+        self._sales_order_line_cache = {}
+        self._build_line_cache = {}
+        self._used_in_bom_items_cache = {}
 
     def post_process_entries(self, entries: list) -> list:
         """Post-process the list of forecasting entries before returning to the user.
@@ -161,7 +172,7 @@ class PartForecast:
         return {
             "date": date,
             "quantity": float(quantity) * multiplier,
-            "label": getattr(instance, "reference", str(instance)),
+            "label": instance.reference,
             "title": str(title),
             "model_type": instance.__class__.__name__.lower(),
             "model_id": instance.pk,
@@ -230,20 +241,23 @@ class PartForecast:
         """
         entries = []
 
-        # Find all open sales order line items
-        so_lines = order_models.SalesOrderLineItem.objects.filter(
-            order__status__in=order_status.SalesOrderStatusGroups.OPEN
-        ).select_related("order", "part")
+        if part.pk not in self._sales_order_line_cache:
+            # Find all open sales order line items
+            so_lines = order_models.SalesOrderLineItem.objects.filter(
+                order__status__in=order_status.SalesOrderStatusGroups.OPEN
+            ).select_related("order", "part")
 
-        if include_variants:
-            # Filter lines to include any variants of the provided part
-            variants = part.get_descendants(include_self=True)
-            so_lines = so_lines.filter(part__in=variants)
-        else:
-            # Filter lines to only include the exact part
-            so_lines = so_lines.filter(part=part)
+            if include_variants:
+                # Filter lines to include any variants of the provided part
+                variants = part.get_descendants(include_self=True)
+                so_lines = so_lines.filter(part__in=variants)
+            else:
+                # Filter lines to only include the exact part
+                so_lines = so_lines.filter(part=part)
 
-        for line in so_lines:
+            self._sales_order_line_cache[part.pk] = list(so_lines)
+
+        for line in self._sales_order_line_cache[part.pk]:
             target_date = line.target_date or line.order.target_date
             # Negative quantities indicate outgoing sales orders
 
@@ -337,22 +351,25 @@ class PartForecast:
         """
         entries = []
 
-        if include_variants:
-            # If we are including variants, get all descendants of the part
-            parts = list(part.get_descendants(include_self=True))
-        else:
-            # Only include the exact part
-            parts = [part]
+        if part.pk not in self._build_line_cache:
+            if include_variants:
+                # If we are including variants, get all descendants of the part
+                parts = list(part.get_descendants(include_self=True))
+            else:
+                # Only include the exact part
+                parts = [part]
 
-        # We now have a list of parts to check
-        # For each part, look at any outstanding build lines which reference this part
-        lines = build_models.BuildLine.objects.filter(
-            bom_item__sub_part__in=parts,
-            build__status__in=build_status.BuildStatusGroups.ACTIVE_CODES,
-            consumed__lt=F("quantity"),
-        ).select_related("build", "bom_item", "bom_item__part")
+            # We now have a list of parts to check
+            # For each part, look at any outstanding build lines which reference this part
+            lines = build_models.BuildLine.objects.filter(
+                bom_item__sub_part__in=parts,
+                build__status__in=build_status.BuildStatusGroups.ACTIVE_CODES,
+                consumed__lt=F("quantity"),
+            ).select_related("build", "bom_item", "bom_item__part")
 
-        for line in lines:
+            self._build_line_cache[part.pk] = list(lines)
+
+        for line in self._build_line_cache[part.pk]:
             remaining = max(0, line.quantity - line.consumed)
 
             if remaining > 0:
@@ -380,22 +397,32 @@ class PartForecast:
 
         - This looks at forecasting for any assemblies which use this part - and any higher level assemblies too
         - For each of those assemblies, we look at any outstanding build orders or sales orders which require the part
+
+        This is a two-pass operation, to keep the number of database queries
+        roughly proportional to the *shape* of the BOM tree (its depth and
+        breadth) rather than the number of individual (part, path) visits,
+        which grows much faster in a tree with shared/diamond-shaped
+        dependencies:
+
+        1. `_discover_upstream_visits` walks the BOM tree upward, level by
+           level, batching the "who uses me" lookup for an entire tier of
+           parts into a single query instead of one query per part.
+        2. The resulting distinct parts are used to bulk-prefetch sales order
+           lines and build line allocations (again, one query each instead of
+           one per part), before generating entries for every visit.
         """
+        visits = self._discover_upstream_visits(part, include_upstream)
+
+        distinct_parts = {}
+        for visited_part, _multiplier, _chain in visits:
+            distinct_parts.setdefault(visited_part.pk, visited_part)
+
+        self._prefetch_sales_order_lines(distinct_parts.values(), include_variants)
+        self._prefetch_build_lines(distinct_parts.values(), include_variants)
 
         entries = []
 
-        # Start with the bottom level part, and work upwards through the assembly tree
-        parts_to_process = [(part, 0, 1.0, [])]
-
-        while parts_to_process:
-            current_part, level, multiplier, chain = parts_to_process.pop()
-
-            # No further processing if we are not including upstream assemblies
-            if level > 0 and not include_upstream:
-                continue
-
-            chain = [*chain, (current_part, multiplier)]
-
+        for current_part, multiplier, chain in visits:
             if current_part.pk not in self.assembly_stock:
                 # Calculate the available stock for a given assembly
                 # For higher level entries, account for the "in stock" quantity
@@ -421,39 +448,191 @@ class PartForecast:
                 chain=chain,
             )
 
-            # Find any assembly parts which use this one
-            bom_items = (
-                part_models.BomItem.objects.filter(
-                    current_part.get_used_in_bom_item_filter(
-                        include_variants=True, include_substitutes=False
-                    )
-                )
-                .filter(part__active=True)
-                .select_related("part")
+        return entries
+
+    def _discover_upstream_visits(
+        self, part: part_models.Part, include_upstream: bool
+    ) -> list:
+        """Walk the BOM tree upward from `part`, discovering every (part,
+        multiplier, chain) visit - a part reached via N independent BOM paths
+        is visited N times, each with its own multiplier/chain, exactly as the
+        single-node-at-a-time traversal this replaces did.
+
+        The difference is *how* parents are discovered: instead of querying
+        "who uses this part" one part at a time, parts are processed in BFS
+        tiers, and each tier's "who uses any of these parts" lookup is done in
+        a single batched query - so query count scales with the BOM tree's
+        depth (number of tiers), not with the number of parts or visits.
+        """
+        visits = []
+
+        # Each frontier entry is (part, multiplier, chain-not-yet-including-part)
+        frontier = [(part, 1.0, [])]
+
+        while frontier:
+            extended_frontier = []
+            for current_part, multiplier, chain in frontier:
+                new_chain = [*chain, (current_part, multiplier)]
+                visits.append((current_part, multiplier, new_chain))
+                extended_frontier.append((current_part, new_chain))
+
+            if not include_upstream:
+                # Only the starting part itself is processed - no need to even
+                # look up its parents, since they'd never be visited anyway.
+                break
+
+            items_by_sub_part = self._used_in_bom_items_for_parts([
+                current_part for current_part, _chain in extended_frontier
+            ])
+
+            next_frontier = []
+
+            for current_part, new_chain in extended_frontier:
+                multiplier = new_chain[-1][1]
+
+                for item in items_by_sub_part.get(current_part.pk, []):
+                    bom_quantity = float(item.quantity) * float(multiplier)
+
+                    # If the BOM Item is inherited by variants
+                    if item.inherited:
+                        parent_parts = list(
+                            item.part.get_descendants(include_self=True).filter(
+                                active=True
+                            )
+                        )
+                    else:
+                        parent_parts = [item.part]
+
+                    for parent_part in parent_parts:
+                        # Skip inactive parts
+                        if not parent_part.active:
+                            continue
+
+                        next_frontier.append((parent_part, bom_quantity, new_chain))
+
+            frontier = next_frontier
+
+        return visits
+
+    def _used_in_bom_items_for_parts(self, parts: list) -> dict:
+        """Batch version of `Part.get_used_in_bom_item_filter()` for a whole
+        tier of parts at once, in a single query.
+
+        Returns {sub_part_pk: [BomItem, ...]}, matching (per sub-part) the same
+        set of BomItem rows that calling `Part.get_used_in_bom_item_filter()`
+        individually for each part in `parts` would have returned.
+        """
+        parts = list(parts)
+        part_pks = {p.pk for p in parts}
+
+        # For the "allow_variants" case: map each ancestor part to the parts in
+        # this batch that are its descendants (i.e. variants further down the
+        # same tree), so a matching BomItem can be attributed back to them.
+        descendants_by_ancestor = defaultdict(list)
+        for p in parts:
+            try:
+                ancestors = p.get_ancestors(include_self=False)
+            except ValueError:
+                # Part is not yet saved - no ancestors possible
+                continue
+            for ancestor in ancestors:
+                descendants_by_ancestor[ancestor.pk].append(p)
+
+        query = Q(sub_part__in=part_pks)
+        if descendants_by_ancestor:
+            query |= Q(
+                allow_variants=True, sub_part_id__in=list(descendants_by_ancestor)
             )
 
-            for item in bom_items:
-                bom_quantity = float(item.quantity) * float(multiplier)
+        bom_items = (
+            part_models.BomItem.objects.filter(query)
+            .filter(part__active=True)
+            .select_related("part", "sub_part")
+        )
 
-                # If the BOM Item is inherited by variants
-                if item.inherited:
-                    parent_parts = list(
-                        item.part.get_descendants(include_self=True).filter(active=True)
-                    )
-                else:
-                    parent_parts = [item.part]
+        result = defaultdict(list)
+        for item in bom_items:
+            if item.sub_part_id in part_pks:
+                result[item.sub_part_id].append(item)
 
-                # Add this assembly to the list of parts to process
-                for parent_part in parent_parts:
-                    # Skip inactive parts
-                    if not parent_part.active:
-                        continue
+            if item.allow_variants and item.sub_part_id in descendants_by_ancestor:
+                for descendant_part in descendants_by_ancestor[item.sub_part_id]:
+                    result[descendant_part.pk].append(item)
 
-                    parts_to_process.append((
-                        parent_part,
-                        level + 1,
-                        bom_quantity,
-                        chain,
-                    ))
+        return result
 
-        return entries
+    def _prefetch_sales_order_lines(self, parts, include_variants: bool):
+        """Bulk-populate `self._sales_order_line_cache` for every part in `parts`
+        which isn't already cached, using a single query for the whole batch
+        instead of one query per part.
+        """
+        pending = [p for p in parts if p.pk not in self._sales_order_line_cache]
+
+        if not pending:
+            return
+
+        search_pks_by_part, all_search_pks = self._resolve_variant_search_sets(
+            pending, include_variants
+        )
+
+        so_lines = list(
+            order_models.SalesOrderLineItem.objects.filter(
+                order__status__in=order_status.SalesOrderStatusGroups.OPEN,
+                part_id__in=all_search_pks,
+            ).select_related("order", "part")
+        )
+
+        for p in pending:
+            search_pks = search_pks_by_part[p.pk]
+            self._sales_order_line_cache[p.pk] = [
+                line for line in so_lines if line.part_id in search_pks
+            ]
+
+    def _prefetch_build_lines(self, parts, include_variants: bool):
+        """Bulk-populate `self._build_line_cache` for every part in `parts`
+        which isn't already cached, using a single query for the whole batch
+        instead of one query per part.
+        """
+        pending = [p for p in parts if p.pk not in self._build_line_cache]
+
+        if not pending:
+            return
+
+        search_pks_by_part, all_search_pks = self._resolve_variant_search_sets(
+            pending, include_variants
+        )
+
+        lines = list(
+            build_models.BuildLine.objects.filter(
+                bom_item__sub_part_id__in=all_search_pks,
+                build__status__in=build_status.BuildStatusGroups.ACTIVE_CODES,
+                consumed__lt=F("quantity"),
+            ).select_related("build", "bom_item", "bom_item__part")
+        )
+
+        for p in pending:
+            search_pks = search_pks_by_part[p.pk]
+            self._build_line_cache[p.pk] = [
+                line for line in lines if line.bom_item.sub_part_id in search_pks
+            ]
+
+    def _resolve_variant_search_sets(self, parts: list, include_variants: bool):
+        """For each part, resolve the set of part pks that should be searched on
+        its behalf (itself, plus descendants if `include_variants`), and the
+        union of all those sets across the whole batch.
+        """
+        search_pks_by_part = {}
+        all_search_pks = set()
+
+        for p in parts:
+            if include_variants:
+                search_pks = set(
+                    p.get_descendants(include_self=True).values_list("pk", flat=True)
+                )
+            else:
+                search_pks = {p.pk}
+
+            search_pks_by_part[p.pk] = search_pks
+            all_search_pks.update(search_pks)
+
+        return search_pks_by_part, all_search_pks
