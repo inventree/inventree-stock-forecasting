@@ -41,6 +41,16 @@ class PartForecast:
 
         At this point, the entries are sorted (by date),
         and we also have a complete picture of the stock availability of any intermediate assemblies
+
+        Every entry is kept in the returned list, even one whose demand is
+        entirely covered by intermediate assembly stock (`quantity` offset
+        down to 0) - such an entry has no further effect on the forecasted
+        part's own stock level, but it's still a real order the user may want
+        visibility into. `quantity` always reflects the actual (post-offset)
+        impact on the forecasted part; `original_quantity` (set once in
+        `generate_entry` and never modified here) preserves what was
+        originally required, so callers can detect - and flag - entries whose
+        demand was wholly or partially absorbed upstream.
         """
 
         for entry in entries:
@@ -110,11 +120,12 @@ class PartForecast:
                 level_ratio = cumulative_multiplier / next_cumulative_multiplier
                 quantity *= Decimal(level_ratio)
 
-            # Update the entry with the post-processed quantity
+            # Update the entry with the post-processed quantity. `original_quantity`
+            # (set in `generate_entry`) is left untouched, so callers can tell this
+            # entry's demand was (fully or partially) covered by intermediate stock.
             entry["quantity"] = quantity
 
-        # Return ONLY entries with a non-zero quantity
-        return [entry for entry in entries if entry.get("quantity", 0) != 0]
+        return entries
 
     def get_entries(
         self,
@@ -201,9 +212,18 @@ class PartForecast:
         if part:
             part = part_serializers.PartBriefSerializer(part, pricing=False).data
 
+        raw_quantity = float(quantity) * multiplier
+
         return {
             "date": date,
-            "quantity": float(quantity) * multiplier,
+            "quantity": raw_quantity,
+            # The quantity as originally required, before `post_process_entries`
+            # may offset (part or all of) it against intermediate assembly
+            # stock. Set once here and never touched again - `quantity` above
+            # is the only field `post_process_entries` mutates - so the two
+            # can be compared afterwards to show how much of an entry's demand
+            # was silently covered by stock elsewhere in the chain.
+            "original_quantity": raw_quantity,
             "label": instance.reference,
             "title": str(title),
             "model_type": instance.__class__.__name__.lower(),

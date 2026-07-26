@@ -28,12 +28,15 @@ import {
 } from '@mantine/core';
 import {
   IconExclamationCircle,
+  IconExternalLink,
   IconFileDownload,
   IconInfoCircle,
+  IconPackage,
   IconRefresh
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { useContextMenu } from 'mantine-contextmenu';
 import { DataTable, type DataTableSortStatus } from 'mantine-datatable';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -49,6 +52,24 @@ const truthyOptions = [
     label: 'Yes'
   }
 ];
+
+// Renders a form field label with an inline info icon, whose tooltip
+// explains what the field does - used for options whose effect isn't
+// obvious from the label alone.
+function LabelWithInfo({ label, info }: { label: string; info: string }) {
+  return (
+    <Group gap={4} wrap='nowrap'>
+      <Text size='sm' fw={500}>
+        {label}
+      </Text>
+      <Tooltip label={info} multiline w={300} withArrow>
+        <ActionIcon color='blue' variant='transparent' size='xs'>
+          <IconInfoCircle />
+        </ActionIcon>
+      </Tooltip>
+    </Group>
+  );
+}
 
 function ChartTooltip({ label, payload }: Readonly<ChartTooltipProps>) {
   if (!payload) {
@@ -297,6 +318,30 @@ export function ForecastingTable({
   // Keep an internal copy of the records, so we can sort the table
   const [records, setRecords] = useState<any[]>([]);
 
+  const { showContextMenu } = useContextMenu();
+
+  // Right-click a row to jump straight to the linked part's detail page
+  const handleRowContextMenu = useCallback(
+    ({ record, event }: { record: any; event: React.MouseEvent }) => {
+      if (!record.part) {
+        return;
+      }
+
+      const url = getDetailUrl(ModelType.part, record.part.pk, true);
+
+      showContextMenu([
+        {
+          key: 'view-part',
+          title: 'View Part',
+          icon: <IconExternalLink size={16} />,
+          onClick: (clickEvent: any) =>
+            navigateToLink(url, context.navigate, clickEvent)
+        }
+      ])(event);
+    },
+    [context.navigate, showContextMenu]
+  );
+
   const totalQuantity: number = useMemo(() => {
     return (
       initialQuantity +
@@ -371,7 +416,7 @@ export function ForecastingTable({
               </Anchor>
             );
           } else {
-            return <Text>{record.label}</Text>;
+            return <Text size='sm'>{record.label}</Text>;
           }
         }
       },
@@ -384,6 +429,7 @@ export function ForecastingTable({
             return context.renderInstance({
               instance: record.part,
               model: ModelType.part,
+              link: true,
               navigate: context.navigate
             });
           } else {
@@ -412,7 +458,10 @@ export function ForecastingTable({
       {
         accessor: 'title',
         title: 'Description',
-        sortable: false
+        sortable: false,
+        render: (record: any) => {
+          return <Text size='sm'>{record.title}</Text>;
+        }
       },
       {
         accessor: 'date',
@@ -423,7 +472,7 @@ export function ForecastingTable({
           if (!record.date) {
             return (
               <Group gap='xs' justify='space-between'>
-                <Text c='red' fs='italic'>
+                <Text size='sm' c='red' fs='italic'>
                   No date specified
                 </Text>
                 <Tooltip
@@ -443,7 +492,7 @@ export function ForecastingTable({
           if (index > 0 && dayjs(record.date).isBefore(today)) {
             return (
               <Group gap='xs' justify='space-between'>
-                <Text c='red' fs='italic'>
+                <Text size='sm' c='red' fs='italic'>
                   {record.date}
                 </Text>
                 <Tooltip
@@ -459,7 +508,7 @@ export function ForecastingTable({
             );
           }
 
-          return <Text>{record.date}</Text>;
+          return <Text size='sm'>{record.date}</Text>;
         }
       },
       {
@@ -473,15 +522,52 @@ export function ForecastingTable({
             prefix = '+';
           }
 
+          // 'original_quantity' is the demand before offsetting against
+          // available intermediate assembly stock (only present when
+          // 'consider_intermediate_stock' is enabled). It differs from
+          // 'quantity' only when some (or all) of this entry's demand was
+          // covered by stock further up the BOM chain, rather than needing
+          // to be sourced for *this* part.
+          const original = record.original_quantity;
+          const hasStockOffset =
+            original != null &&
+            Math.abs(parseFloat(original) - parseFloat(record.quantity)) >
+              0.0001;
+          const fullyCovered =
+            hasStockOffset && parseFloat(record.quantity) === 0;
+
           return (
-            <Text>
-              {prefix}
-              {formatDecimal(record.quantity)}
-            </Text>
+            <Group gap={6} justify='space-between' wrap='nowrap'>
+              <Text
+                size='sm'
+                c={fullyCovered ? 'dimmed' : undefined}
+                fs={fullyCovered ? 'italic' : undefined}
+              >
+                {prefix}
+                {formatDecimal(record.quantity)}
+              </Text>
+              {hasStockOffset && (
+                <Tooltip
+                  label={
+                    fullyCovered
+                      ? `Fully covered by intermediate assembly stock: ${formatDecimal(original)} originally required`
+                      : `Partially covered by intermediate assembly stock: ${formatDecimal(original)} originally required`
+                  }
+                >
+                  <ActionIcon
+                    color={fullyCovered ? 'green' : 'blue'}
+                    variant='transparent'
+                    size='xs'
+                  >
+                    <IconPackage />
+                  </ActionIcon>
+                </Tooltip>
+              )}
+            </Group>
           );
         },
         footer: (
-          <Text fw='bold'>
+          <Text size='sm' fw='bold'>
             Total: {totalQuantity > 0 && '+'}
             {formatDecimal(totalQuantity)}
           </Text>
@@ -496,6 +582,7 @@ export function ForecastingTable({
       records={records}
       sortStatus={sortStatus}
       onSortStatusChange={setSortStatus}
+      onRowContextMenu={handleRowContextMenu}
       withColumnBorders
       withTableBorder
       striped
@@ -604,7 +691,12 @@ function InvenTreeForecastingPanel({
                 disabled={forecastingQuery.isFetching}
               />
               <Select
-                label={'Include Upstream Assembly Demands'}
+                label={
+                  <LabelWithInfo
+                    label='Include Upstream Assembly Demands'
+                    info='Also include demand from higher-level assemblies which use this part, walking up the full bill of materials - e.g. sales orders or build orders for a product that this part is a component of, not just orders placed directly against this part.'
+                  />
+                }
                 data={truthyOptions}
                 value={includeUpstream ? 'true' : 'false'}
                 onChange={(value) => {
@@ -613,7 +705,12 @@ function InvenTreeForecastingPanel({
                 disabled={forecastingQuery.isFetching}
               />
               <Select
-                label={'Consider Intermediate Stock Availability'}
+                label={
+                  <LabelWithInfo
+                    label='Consider Intermediate Stock Availability'
+                    info='Offset upstream demand against stock (and incoming purchase/build orders) already available for the intermediate assemblies in between - only the resulting shortfall is added to this part. Orders fully covered this way are still shown, marked with a package icon, but no longer affect this part.'
+                  />
+                }
                 data={truthyOptions}
                 value={considerIntermediateStock ? 'true' : 'false'}
                 onChange={(value) => {

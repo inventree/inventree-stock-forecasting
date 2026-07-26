@@ -362,10 +362,16 @@ class PostProcessEntriesTests(PartForecastTestCase):
     """Table-driven tests for `post_process_entries`, using hand-built entry dicts."""
 
     def entry(self, quantity, chain=None):
-        """Construct a minimal forecast entry dict for testing."""
+        """Construct a minimal forecast entry dict for testing.
+
+        Mirrors `generate_entry`: `original_quantity` starts out equal to
+        `quantity`, and is the only field `post_process_entries` must never
+        modify - `quantity` is the one it's allowed to offset.
+        """
         return {
             'date': NEXT_WEEK,
             'quantity': quantity,
+            'original_quantity': quantity,
             'label': 'test',
             'title': 'test',
             'model_type': 'testmodel',
@@ -392,8 +398,12 @@ class PostProcessEntriesTests(PartForecastTestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]['quantity'], -10)
 
-    def test_full_offset_drops_entry(self):
-        """An entry fully offset by available intermediate stock is dropped."""
+    def test_full_offset_keeps_entry_at_zero_with_original_quantity_preserved(self):
+        """An entry fully offset by available intermediate stock is kept (not
+        dropped), with `quantity` zeroed out but `original_quantity` intact -
+        so callers can tell this order exists and was fully covered by
+        intermediate stock, rather than losing all trace of it.
+        """
         intermediate = Part.objects.create(
             name='Intermediate 2', description='x', assembly=True
         )
@@ -404,12 +414,16 @@ class PostProcessEntriesTests(PartForecastTestCase):
 
         result = self.forecast.post_process_entries(entries)
 
-        self.assertEqual(result, [])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['quantity'], 0)
+        self.assertEqual(result[0]['original_quantity'], -20)
         # All 10 available units of intermediate stock were consumed
         self.assertEqual(self.forecast.assembly_stock[intermediate.pk], 0)
 
     def test_partial_offset_reduces_entry(self):
-        """An entry partially offset by available stock retains the remaining quantity."""
+        """An entry partially offset by available stock retains the remaining
+        quantity in `quantity`, while `original_quantity` keeps the pre-offset value.
+        """
         intermediate = Part.objects.create(
             name='Intermediate 3', description='x', assembly=True
         )
@@ -423,6 +437,7 @@ class PostProcessEntriesTests(PartForecastTestCase):
         self.assertEqual(len(result), 1)
         # 6 units of intermediate remain unfulfilled -> 6 * 2 = 12 units of the bottom part
         self.assertEqual(result[0]['quantity'], -12)
+        self.assertEqual(result[0]['original_quantity'], -20)
         self.assertEqual(self.forecast.assembly_stock[intermediate.pk], 0)
 
     def test_base_part_own_stock_is_never_used_as_an_offset(self):
@@ -454,6 +469,7 @@ class PostProcessEntriesTests(PartForecastTestCase):
         # Fully unfulfilled at the intermediate level -> the full -20 remains,
         # NOT offset (or dropped entirely) by the base part's own stock.
         self.assertEqual(result[0]['quantity'], -20)
+        self.assertEqual(result[0]['original_quantity'], -20)
         # The base part's stock entry is left completely untouched.
         self.assertEqual(self.forecast.assembly_stock[self.part.pk], 1000)
 
@@ -521,10 +537,13 @@ class PostProcessEntriesTests(PartForecastTestCase):
 
         result = self.forecast.post_process_entries(entries)
 
-        # First entry consumes all 5 available units of stock and is dropped.
-        # Second entry has no stock left, so passes through unchanged.
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]['quantity'], -10)
+        # First entry consumes all 5 available units of stock and is kept,
+        # zeroed out. Second entry has no stock left, so passes through unchanged.
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]['quantity'], 0)
+        self.assertEqual(result[0]['original_quantity'], -10)
+        self.assertEqual(result[1]['quantity'], -10)
+        self.assertEqual(result[1]['original_quantity'], -10)
         self.assertEqual(self.forecast.assembly_stock[intermediate.pk], 0)
 
 
