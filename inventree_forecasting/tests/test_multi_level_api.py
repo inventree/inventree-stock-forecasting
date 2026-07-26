@@ -230,18 +230,30 @@ class RawOracleMixin:
                     result.append(entry)
                 continue
 
-            chain_multiplier = 1.0
-            for _part, qty in chain:
-                chain_multiplier *= qty
+            # Each chain entry stores the *cumulative* multiplier up to that
+            # level (not the ratio between consecutive levels) - divide out
+            # the entry's own top-of-chain cumulative multiplier to recover
+            # the raw outstanding quantity, then convert down level-by-level
+            # using the ratio *between* consecutive cumulative multipliers
+            # (equivalent to the per-level BOM ratio), matching the corrected
+            # `post_process_entries` in forecast.py.
+            top_multiplier = chain[-1][1]
 
-            if chain_multiplier <= 0:
+            if top_multiplier <= 0:
                 if quantity:
                     result.append(entry)
                 continue
 
-            quantity = quantity / chain_multiplier
+            quantity = quantity / top_multiplier
 
-            for chain_part, qty in reversed(chain):
+            # chain[0] is always the part being forecasted itself, never a
+            # true intermediate assembly - never offset against its stock
+            # here, since it's already reflected via the caller's `in_stock`
+            # baseline and its own purchase/build order entries. Matches the
+            # corrected `post_process_entries` in forecast.py.
+            chain_length = len(chain)
+            for idx in range(chain_length - 1, 0, -1):
+                chain_part, cumulative_multiplier = chain[idx]
                 available = assembly_stock.get(chain_part.pk, 0)
                 offset = min(available, -quantity)
                 assembly_stock[chain_part.pk] = available - offset
@@ -250,8 +262,9 @@ class RawOracleMixin:
                 if quantity >= 0:
                     quantity = 0
                     break
-                else:
-                    quantity *= qty
+
+                _, next_cumulative_multiplier = chain[idx - 1]
+                quantity *= cumulative_multiplier / next_cumulative_multiplier
 
             if quantity:
                 result.append({**entry, 'quantity': quantity})
