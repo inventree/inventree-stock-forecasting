@@ -19,6 +19,11 @@ class PartForecast:
 
     def __init__(self):
         # Available stock for each intermediate assembly, used to offset demand.
+        # Populated (in `generate_upstream_entries`) for every part visited
+        # during the upstream walk, including the base part being forecasted -
+        # but `post_process_entries` must never spend the base part's own
+        # entry, since its stock is already reflected via the caller's
+        # `in_stock` baseline and its own purchase/build order entries.
         self.assembly_stock = {}
 
         # Per-part query result caches, keyed by part pk. A part reached via
@@ -65,9 +70,21 @@ class PartForecast:
             # Start with the raw quantity required for the entry
             quantity = Decimal(quantity) / Decimal(top_multiplier)
 
-            # For a "chained" entry we iterate backwards down the chain, and offset the quantity by the available stock at each level
+            # For a "chained" entry we iterate backwards down the chain, and offset the quantity by the available stock at each level.
+            #
+            # chain[0] is always the base part being forecasted (the `part`
+            # passed to `get_entries`), never a true intermediate assembly -
+            # deliberately stop at idx=1 and never offset against
+            # `assembly_stock[chain[0][0].pk]`. That part's current stock is
+            # already the caller's `in_stock` baseline that entries are added
+            # on top of (see ForecastingPanel's running total, and
+            # `export_data`), and its incoming purchase/build orders already
+            # appear as their own unmodified (chain=None) positive entries.
+            # Offsetting here too would silently spend that same stock a
+            # second (or third) time, shrinking shortfalls that happen to
+            # route all the way back down to the base part.
             chain_length = len(chain)
-            for idx in range(chain_length - 1, -1, -1):
+            for idx in range(chain_length - 1, 0, -1):
                 part, cumulative_multiplier = chain[idx]
 
                 # How much intermediate stock is available?
@@ -82,16 +99,16 @@ class PartForecast:
                     # If the quantity has been fully offset by available stock, we can stop processing this entry
                     quantity = 0
                     break
-                elif idx > 0:
-                    # Convert the remaining shortfall down to the next (lower)
-                    # level's units, using the ratio between this level's and
-                    # the next level's *cumulative* multipliers - which is the
-                    # per-level BOM ratio between them. Using the cumulative
-                    # multiplier directly here (as opposed to this ratio)
-                    # double-counts every level above the base part.
-                    _, next_cumulative_multiplier = chain[idx - 1]
-                    level_ratio = cumulative_multiplier / next_cumulative_multiplier
-                    quantity *= Decimal(level_ratio)
+
+                # Convert the remaining shortfall down to the next (lower)
+                # level's units, using the ratio between this level's and
+                # the next level's *cumulative* multipliers - which is the
+                # per-level BOM ratio between them. Using the cumulative
+                # multiplier directly here (as opposed to this ratio)
+                # double-counts every level above the base part.
+                _, next_cumulative_multiplier = chain[idx - 1]
+                level_ratio = cumulative_multiplier / next_cumulative_multiplier
+                quantity *= Decimal(level_ratio)
 
             # Update the entry with the post-processed quantity
             entry["quantity"] = quantity

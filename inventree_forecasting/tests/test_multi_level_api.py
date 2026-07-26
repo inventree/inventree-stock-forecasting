@@ -246,8 +246,13 @@ class RawOracleMixin:
 
             quantity = quantity / top_multiplier
 
+            # chain[0] is always the part being forecasted itself, never a
+            # true intermediate assembly - never offset against its stock
+            # here, since it's already reflected via the caller's `in_stock`
+            # baseline and its own purchase/build order entries. Matches the
+            # corrected `post_process_entries` in forecast.py.
             chain_length = len(chain)
-            for idx in range(chain_length - 1, -1, -1):
+            for idx in range(chain_length - 1, 0, -1):
                 chain_part, cumulative_multiplier = chain[idx]
                 available = assembly_stock.get(chain_part.pk, 0)
                 offset = min(available, -quantity)
@@ -257,9 +262,9 @@ class RawOracleMixin:
                 if quantity >= 0:
                     quantity = 0
                     break
-                elif idx > 0:
-                    _, next_cumulative_multiplier = chain[idx - 1]
-                    quantity *= cumulative_multiplier / next_cumulative_multiplier
+
+                _, next_cumulative_multiplier = chain[idx - 1]
+                quantity *= cumulative_multiplier / next_cumulative_multiplier
 
             if quantity:
                 result.append({**entry, 'quantity': quantity})

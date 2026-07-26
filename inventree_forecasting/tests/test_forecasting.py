@@ -425,6 +425,38 @@ class PostProcessEntriesTests(PartForecastTestCase):
         self.assertEqual(result[0]['quantity'], -12)
         self.assertEqual(self.forecast.assembly_stock[intermediate.pk], 0)
 
+    def test_base_part_own_stock_is_never_used_as_an_offset(self):
+        """The base part being forecasted (chain[0]) must never have its own
+        stock spent to offset a chain-derived shortfall, no matter how much
+        is available - only genuinely intermediate levels (chain[1:]) count.
+
+        This matters because the base part's stock is already reflected
+        elsewhere: as the starting point the API/frontend adds every entry's
+        quantity on top of (`in_stock`), and (for on_order/being-built stock)
+        as its own separate, unmodified purchase/build order entries. Letting
+        `post_process_entries` also spend `assembly_stock[chain[0]]` credits
+        that same stock a second time, silently shrinking - or, as here,
+        completely erasing - a real shortfall for any chain that happens to
+        cascade all the way back down to the base part.
+        """
+        intermediate = Part.objects.create(
+            name='Intermediate 6', description='x', assembly=True
+        )
+        # -20 units required at the bottom level, chain multiplier = 2
+        # -> 10 units required of the intermediate part, none available there,
+        # but the base part itself has plenty of "stock" recorded.
+        self.forecast.assembly_stock = {self.part.pk: 1000, intermediate.pk: 0}
+        entries = [self.entry(-20, chain=[(self.part, 1.0), (intermediate, 2.0)])]
+
+        result = self.forecast.post_process_entries(entries)
+
+        self.assertEqual(len(result), 1)
+        # Fully unfulfilled at the intermediate level -> the full -20 remains,
+        # NOT offset (or dropped entirely) by the base part's own stock.
+        self.assertEqual(result[0]['quantity'], -20)
+        # The base part's stock entry is left completely untouched.
+        self.assertEqual(self.forecast.assembly_stock[self.part.pk], 1000)
+
     def test_three_tier_chain_offsets_use_per_level_ratios(self):
         """A chain spanning 2+ upstream levels must convert stock offsets using the
         per-level BOM ratio between consecutive chain entries, not the cumulative
