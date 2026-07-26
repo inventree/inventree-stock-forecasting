@@ -41,6 +41,7 @@ class PartForecastingEntrySerializer(serializers.Serializer):
         fields = [
             "date",
             "quantity",
+            "original_quantity",
             "title",
             "label",
             "part",
@@ -56,7 +57,18 @@ class PartForecastingEntrySerializer(serializers.Serializer):
 
     quantity = serializers.FloatField(
         label=_("Quantity"),
-        help_text=_("The forecasted quantity for this date"),
+        help_text=_(
+            "The forecasted quantity for this date, after offsetting against any available intermediate assembly stock"
+        ),
+    )
+
+    original_quantity = serializers.FloatField(
+        label=_("Original Quantity"),
+        help_text=_(
+            "The quantity originally required for this entry, before any offset against "
+            "intermediate assembly stock. Differs from 'quantity' only when the entry's "
+            "demand was wholly or partially covered by stock further up the BOM chain."
+        ),
     )
 
     title = serializers.CharField(

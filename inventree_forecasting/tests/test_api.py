@@ -193,7 +193,10 @@ class QueryParamTests(PartForecastingAPITestCase):
         so = SalesOrder.objects.create(customer=self.customer, reference='SO-0003')
         SalesOrderLineItem.objects.create(order=so, part=assembly, quantity=5)
 
-        # With intermediate stock considered (default), demand is fully offset
+        # With intermediate stock considered (default), demand is fully offset -
+        # the entry is still returned (so the order remains visible to the
+        # user), but with its quantity zeroed out and 'original_quantity'
+        # showing what it would have been without the offset.
         response = self.get(
             self.url,
             data={
@@ -203,7 +206,9 @@ class QueryParamTests(PartForecastingAPITestCase):
             },
             expected_code=200,
         )
-        self.assertEqual(response.data['entries'], [])
+        self.assertEqual(len(response.data['entries']), 1)
+        self.assertEqual(float(response.data['entries'][0]['quantity']), 0)
+        self.assertEqual(float(response.data['entries'][0]['original_quantity']), -5)
 
         # With intermediate stock ignored, the raw (unoffset) demand is returned
         response = self.get(

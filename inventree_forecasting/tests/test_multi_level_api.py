@@ -87,12 +87,17 @@ def _normalize_date(value):
 
 
 def _bucket(entries):
-    """Collapse a flat entry list into {(model_type, model_id, date): [quantity, ...]}."""
+    """Collapse a flat entry list into {(model_type, model_id, date): [quantity, ...]}.
+
+    Includes zero-quantity entries too - `post_process_entries` keeps an
+    entry whose demand was fully covered by intermediate stock (quantity
+    offset down to 0) rather than dropping it, so the oracle must bucket
+    those the same way the real API now returns them.
+    """
     buckets = defaultdict(list)
     for entry in entries:
-        if entry['quantity']:
-            key = (entry['model_type'], entry['model_id'], _normalize_date(entry['date']))
-            buckets[key].append(round(entry['quantity'], ROUND_PLACES))
+        key = (entry['model_type'], entry['model_id'], _normalize_date(entry['date']))
+        buckets[key].append(round(entry['quantity'], ROUND_PLACES))
     return buckets
 
 
@@ -226,8 +231,7 @@ class RawOracleMixin:
             chain = entry['chain']
 
             if quantity >= 0 or not chain or len(chain) <= 1:
-                if quantity:
-                    result.append(entry)
+                result.append(entry)
                 continue
 
             # Each chain entry stores the *cumulative* multiplier up to that
@@ -240,8 +244,7 @@ class RawOracleMixin:
             top_multiplier = chain[-1][1]
 
             if top_multiplier <= 0:
-                if quantity:
-                    result.append(entry)
+                result.append(entry)
                 continue
 
             quantity = quantity / top_multiplier
@@ -266,8 +269,9 @@ class RawOracleMixin:
                 _, next_cumulative_multiplier = chain[idx - 1]
                 quantity *= cumulative_multiplier / next_cumulative_multiplier
 
-            if quantity:
-                result.append({**entry, 'quantity': quantity})
+            # Kept even when fully offset to 0 - matches `post_process_entries`,
+            # which no longer drops fully-covered entries from the output.
+            result.append({**entry, 'quantity': quantity})
 
         return result
 

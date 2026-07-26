@@ -47,6 +47,7 @@ class PartForecastingView(RetrieveAPI):
                     _("Model Type"),
                     _("Model ID"),
                     _("Quantity"),
+                    _("Original Quantity"),
                     _("Stock Level"),
                 ],
             )
@@ -69,6 +70,10 @@ class PartForecastingView(RetrieveAPI):
                         entry.get("model_type", ""),
                         entry.get("model_id", ""),
                         entry.get("quantity", 0),
+                        # Differs from 'Quantity' only when this entry's demand
+                        # was wholly or partially covered by intermediate
+                        # assembly stock further up the BOM chain.
+                        entry.get("original_quantity", entry.get("quantity", 0)),
                         stock,
                     ],
                 )
