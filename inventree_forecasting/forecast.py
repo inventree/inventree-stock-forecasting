@@ -3,7 +3,6 @@
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
-from math import prod
 
 import build.models as build_models
 import build.status_codes as build_status
@@ -39,7 +38,7 @@ class PartForecast:
         and we also have a complete picture of the stock availability of any intermediate assemblies
         """
 
-        for idx, entry in enumerate(entries):
+        for entry in entries:
             quantity = entry.get("quantity", 0)
 
             if quantity >= 0:
@@ -51,18 +50,26 @@ class PartForecast:
             if not chain or len(chain) <= 1:
                 continue
 
-            # Work out the total chain multiplier for this entry
-            chain_multiplier = prod([q for p, q in chain])
+            # Each chain entry stores the *cumulative* multiplier (relative to
+            # the base part) up to that level, not the ratio between
+            # consecutive levels - the entry's quantity was generated using
+            # the last (highest-level) chain entry's cumulative multiplier, so
+            # divide that back out to recover the raw outstanding quantity, in
+            # units of that top-level part.
+            top_multiplier = chain[-1][1]
 
-            if chain_multiplier <= 0:
+            if top_multiplier <= 0:
                 # Defensive check - this should not happen, but we want to avoid any potential issues with zero or negative multipliers
                 continue
 
             # Start with the raw quantity required for the entry
-            quantity = Decimal(quantity) / Decimal(chain_multiplier)
+            quantity = Decimal(quantity) / Decimal(top_multiplier)
 
             # For a "chained" entry we iterate backwards down the chain, and offset the quantity by the available stock at each level
-            for part, qty in reversed(chain):
+            chain_length = len(chain)
+            for idx in range(chain_length - 1, -1, -1):
+                part, cumulative_multiplier = chain[idx]
+
                 # How much intermediate stock is available?
                 available = self.assembly_stock.get(part.pk, 0)
 
@@ -75,8 +82,16 @@ class PartForecast:
                     # If the quantity has been fully offset by available stock, we can stop processing this entry
                     quantity = 0
                     break
-                else:
-                    quantity *= Decimal(qty)
+                elif idx > 0:
+                    # Convert the remaining shortfall down to the next (lower)
+                    # level's units, using the ratio between this level's and
+                    # the next level's *cumulative* multipliers - which is the
+                    # per-level BOM ratio between them. Using the cumulative
+                    # multiplier directly here (as opposed to this ratio)
+                    # double-counts every level above the base part.
+                    _, next_cumulative_multiplier = chain[idx - 1]
+                    level_ratio = cumulative_multiplier / next_cumulative_multiplier
+                    quantity *= Decimal(level_ratio)
 
             # Update the entry with the post-processed quantity
             entry["quantity"] = quantity
